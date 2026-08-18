@@ -80,6 +80,42 @@ describe('audit regressions', () => {
     expect(config.orsUrl).toBe('http://localhost:8080');
   });
 
+  it('deletes the ORS key even when a validation throws', () => {
+    // Regression (audiobookshelf-mcp PR #2): with the delete behind a throwing
+    // branch, a caller that catches the ConfigError would keep running with the
+    // key still in the environment — readable in /proc/<pid>/environ and
+    // inherited by child processes.
+    const e = env({ ORS_API_KEY: 'secret', OSM_CACHE_TTL: 'soon' });
+    expect(() => loadConfig(e)).toThrow(ConfigError);
+    expect(e.ORS_API_KEY).toBeUndefined();
+  });
+
+  it('does not echo the offending value in URL and TTL error messages', () => {
+    // An API key pasted into the wrong variable must not land verbatim in the
+    // MCP host's log via the error message.
+    for (const bad of [
+      env({ ORS_BASE_URL: 'sekret-looking-value' }),
+      env({ NOMINATIM_BASE_URL: 'sekret-looking-value' }),
+      env({ OSM_CACHE_TTL: 'sekret-looking-value' }),
+    ]) {
+      let message = '';
+      try {
+        loadConfig(bad);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).not.toBe('');
+      expect(message).not.toContain('sekret-looking-value');
+    }
+  });
+
+  it('treats bracketed IPv6 loopback as local for the ORS https requirement', () => {
+    const config = loadConfig(
+      env({ ORS_API_KEY: 'k', ORS_BASE_URL: 'http://[::1]:8080' })
+    );
+    expect(config.orsUrl).toBe('http://[::1]:8080');
+  });
+
   it('rejects base URLs carrying a query string or fragment', () => {
     expect(() =>
       loadConfig(env({ OSRM_BASE_URL: 'https://example.com/?key=x' }))

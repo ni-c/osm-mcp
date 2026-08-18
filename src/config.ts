@@ -41,19 +41,22 @@ const DEFAULTS = {
  * /proc/<pid>/environ.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  // Don't keep the key in the environment for the process lifetime — it is
+  // visible to child processes and in /proc/<pid>/environ. This happens before
+  // any branch on purpose: every validation below can throw, and a caller that
+  // catches the ConfigError would otherwise keep running with the key still
+  // sitting in the environment. Everything after this point reads the local.
+  const orsApiKey = env.ORS_API_KEY;
+  delete env.ORS_API_KEY;
+
   const userAgent =
     env.OSM_USER_AGENT ??
     `osm-mcp/${packageVersion()} (+https://github.com/ni-c/osm-mcp)`;
 
   const cacheTtlSeconds = env.OSM_CACHE_TTL ?? '3600';
   if (!/^\d+$/.test(cacheTtlSeconds)) {
-    throw new ConfigError(
-      `OSM_CACHE_TTL must be a number of seconds, got: ${cacheTtlSeconds}`
-    );
+    throw new ConfigError('OSM_CACHE_TTL must be a number of seconds');
   }
-
-  const orsApiKey = env.ORS_API_KEY;
-  delete env.ORS_API_KEY;
 
   // The key travels in an Authorization header — never over cleartext http
   // to a non-local host.
@@ -90,7 +93,13 @@ function validateUrl(name: string, value: string): string {
   try {
     parsed = new URL(value);
   } catch {
-    throw new ConfigError(`${name} is not a valid URL: ${value}`);
+    // The value itself is not echoed: this branch fires precisely when the
+    // variable does not hold what was expected, and an API key pasted into the
+    // wrong environment variable would otherwise be printed verbatim into the
+    // MCP host's log.
+    throw new ConfigError(
+      `${name} is not a valid URL (e.g. https://example.com)`
+    );
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new ConfigError(
@@ -122,11 +131,13 @@ function isCleartextRemote(url: string): boolean {
 }
 
 function isLoopbackHost(hostname: string): boolean {
+  // URL.hostname keeps the brackets around an IPv6 literal — strip them so
+  // every bracketed form matches, not just the exact string '[::1]'.
+  const host = hostname.replace(/^\[|\]$/g, '');
   return (
-    hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    hostname.startsWith('127.') ||
-    hostname === '[::1]' ||
-    hostname === '::1'
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.startsWith('127.') ||
+    host === '::1'
   );
 }
