@@ -20,6 +20,12 @@ updates:
           - minor
           - patch
 
+  # The docs site has its own manifest and lockfile.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+
   # Exists so the digest-pinned base image gets refreshed at all. Node majors are
   # excluded because Dependabot offers whatever tag is newest, while the runtime
   # image has to sit on an ACTIVE LTS line — and roughly half of all Node majors

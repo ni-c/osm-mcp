@@ -1,11 +1,35 @@
 # osm-mcp
 
-MCP server for OpenStreetMap: geocoding, walking/driving/cycling distances and
-durations, multi-stop route optimization, isochrones and POI search — built for
-travel planning with AI assistants.
+[![CI](https://img.shields.io/github/actions/workflow/status/ni-c/osm-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/osm-mcp/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/osm-mcp)](https://www.npmjs.com/package/osm-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/osm-mcp)](https://www.npmjs.com/package/osm-mcp)
+[![node](https://img.shields.io/node/v/osm-mcp)](https://nodejs.org)
+[![Container](https://img.shields.io/badge/ghcr.io-ni--c%2Fosm--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/ni-c/osm-mcp/pkgs/container/osm-mcp)
+[![license](https://img.shields.io/npm/l/osm-mcp)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-osm--mcp.ni--c.de-4f46e5)](https://osm-mcp.ni-c.de)
 
-All backends are free public OpenStreetMap services; **no API key is required**.
-An OpenRouteService key can be supplied optionally to switch the routing engine.
+An [MCP](https://modelcontextprotocol.io) server for
+[OpenStreetMap](https://www.openstreetmap.org): geocoding, walking/driving/cycling
+distances and durations, multi-stop route optimization, isochrones and POI
+search — built for travel planning with AI assistants.
+
+11 tools, all read-only. All backends are free public OpenStreetMap services;
+**no API key is required**. An OpenRouteService key can be supplied optionally to
+switch the routing engine.
+
+📖 **Full documentation: <https://osm-mcp.ni-c.de>**
+
+<!-- <picture> is resolved against the colour scheme of the page showing it, so GitHub
+     picks the variant that matches its own theme toggle. npm strips <picture> and
+     <source> when it sanitises the README and keeps the <img>, which is why that
+     fallback brings its own dark card instead of relying on a media query. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://osm-mcp.ni-c.de/architecture-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://osm-mcp.ni-c.de/architecture-light.svg">
+  <img src="https://osm-mcp.ni-c.de/architecture.svg" alt="An MCP client talks to osm-mcp over stdio; the server exposes eleven read-only tools with rate limiting and caching, and calls Nominatim, Photon, OSRM, Valhalla and Overpass over HTTPS — plus OpenRouteService optionally with an API key" width="800">
+</picture>
+
+<img src="https://osm-mcp.ni-c.de/demo.gif" alt="Terminal recording: the server reports eleven tools, geocodes the Porta Nigra in Trier, and returns a walking route with distance and duration" width="800">
 
 ## Why another OSM MCP server?
 
@@ -44,29 +68,42 @@ Every variable is optional — the server works out of the box.
 | `ORS_BASE_URL`       | `https://api.openrouteservice.org`                                                        | OpenRouteService endpoint                                                                                                                                                                      |
 | `OSM_CACHE_TTL`      | `3600`                                                                                    | Seconds identical upstream responses are served from the in-memory cache (`0` disables caching)                                                                                                |
 
-## Installation
-
-### Claude Code (local checkout, pre-release)
+## Install
 
 ```sh
-npm install && npm run build
-claude mcp add osm -- node /path/to/osm-mcp/dist/index.js
+claude mcp add osm -- npx -y osm-mcp
 ```
 
-Once published, `npx -y osm-mcp` replaces the local path.
-
-### Claude Desktop
+Claude Desktop (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "osm": {
-      "command": "node",
-      "args": ["/path/to/osm-mcp/dist/index.js"]
+      "command": "npx",
+      "args": ["-y", "osm-mcp"]
     }
   }
 }
 ```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.osm]
+command = "npx"
+args = ["-y", "osm-mcp"]
+```
+
+Container (multi-arch, with SBOM and build provenance):
+
+```sh
+docker run -i --rm ghcr.io/ni-c/osm-mcp
+```
+
+`-i` is required — the protocol runs over stdin and stdout. There is no port to
+publish. More client recipes are in the
+[client guide](https://osm-mcp.ni-c.de/guide/clients).
 
 ## Tools
 
@@ -130,9 +167,24 @@ npm run smoke         # opt-in LIVE test against the real public services
 
 ## Releasing
 
-Not yet published — the project is in its test phase. Publishing (npm via
-Trusted Publishing, GHCR, MCP Registry, documentation site) follows once the
-test phase is over.
+Tag-driven, no manual publish step:
+
+1. Move the `[Unreleased]` entries into a new `## [x.y.z] - YYYY-MM-DD` section in
+   `CHANGELOG.md` and bump `package.json`.
+2. `npm run lint && npm run build && npm run test:coverage`.
+3. Commit, then a **signed annotated** tag: `git tag -s vx.y.z -m "vx.y.z"`.
+4. `git push origin main vx.y.z`.
+
+`release.yml` then runs the tests, publishes to npm with provenance via Trusted
+Publishing (no token secret involved), creates the GitHub release from the
+CHANGELOG section, and publishes to the
+[MCP registry](https://registry.modelcontextprotocol.io) as
+`io.github.ni-c/osm-mcp`. `ci.yml` pushes the multi-arch image to GHCR on the
+same tag.
+
+If the registry step fails, fix it on `main` and dispatch the
+`Publish to MCP Registry` workflow — do **not** re-run the tag job, which would
+check out the old tree.
 
 ## License
 
