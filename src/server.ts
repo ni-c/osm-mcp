@@ -10,6 +10,7 @@ import type { Config } from './config.js';
 import type { Deps } from './deps.js';
 import { HttpClient } from './http.js';
 import { PlaceResolver } from './resolve.js';
+import { registerSecret } from './result.js';
 import { registerGeocodingTools } from './tools/geocoding.js';
 import { registerMiscTools } from './tools/misc.js';
 import { registerPoiTools } from './tools/pois.js';
@@ -17,6 +18,10 @@ import { registerRoutingTools } from './tools/routing.js';
 import { packageVersion } from './version.js';
 
 export function createServer(config: Config): McpServer {
+  // Last line of defense: no tool result may ever contain the key verbatim,
+  // no matter which upstream echoed it.
+  registerSecret(config.orsApiKey);
+
   const http = new HttpClient(config.userAgent, config.cacheTtlMs);
   const nominatim = new NominatimBackend(http, config);
   const photon = new PhotonBackend(http, config);

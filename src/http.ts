@@ -2,8 +2,14 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_CACHE_ENTRIES = 500;
 /** Hard cap on a buffered upstream response — protects the process heap. */
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
-/** Responses above this are served but never cached (500 × 1 MB is enough). */
+/** Responses above this are served but never cached. */
 const MAX_CACHEABLE_CHARS = 1024 * 1024;
+/**
+ * Aggregate budget for cached response text. The entry cap alone would allow
+ * 500 × 1 MB — half a gigabyte held for a full hour in a memory-limited
+ * container.
+ */
+const MAX_CACHE_BYTES = 32 * 1024 * 1024;
 /** Beyond this many queued requests per service the caller gets a fast error. */
 const MAX_QUEUE_DEPTH = 32;
 
@@ -24,7 +30,7 @@ export class OsmApiError extends Error {
  * embed one) — never let any of the common key parameter names into an error
  * message.
  */
-function redactUrl(url: string): string {
+export function redactUrl(url: string): string {
   return url.replace(
     /([?&](?:api_?key|key|token|access_token)=)[^&]*/gi,
     '$1[redacted]'
@@ -112,35 +118,56 @@ export class Semaphore {
 interface CacheEntry {
   expires: number;
   value: unknown;
+  /** Length of the response text this entry was parsed from. */
+  size: number;
 }
 
-/** In-memory TTL cache with a hard entry cap (oldest entry is evicted first). */
+/**
+ * In-memory TTL cache with a hard entry cap and an aggregate size budget
+ * (oldest entries are evicted first).
+ */
 export class TtlCache {
   private readonly entries = new Map<string, CacheEntry>();
+  private totalSize = 0;
 
   constructor(
     private readonly ttlMs: number,
     private readonly maxEntries: number = MAX_CACHE_ENTRIES,
-    private readonly now: () => number = () => Date.now()
+    private readonly now: () => number = () => Date.now(),
+    private readonly maxBytes: number = MAX_CACHE_BYTES
   ) {}
 
   get(key: string): unknown {
     const entry = this.entries.get(key);
     if (!entry) return undefined;
     if (entry.expires <= this.now()) {
-      this.entries.delete(key);
+      this.delete(key);
       return undefined;
     }
     return entry.value;
   }
 
-  set(key: string, value: unknown): void {
-    if (this.ttlMs <= 0) return;
-    if (this.entries.size >= this.maxEntries && !this.entries.has(key)) {
+  set(key: string, value: unknown, size = 0): void {
+    if (this.ttlMs <= 0 || size > this.maxBytes) return;
+    this.delete(key);
+    while (
+      this.entries.size > 0 &&
+      (this.entries.size >= this.maxEntries ||
+        this.totalSize + size > this.maxBytes)
+    ) {
       const oldest = this.entries.keys().next().value;
-      if (oldest !== undefined) this.entries.delete(oldest);
+      if (oldest === undefined) break;
+      this.delete(oldest);
     }
-    this.entries.set(key, { expires: this.now() + this.ttlMs, value });
+    this.entries.set(key, { expires: this.now() + this.ttlMs, value, size });
+    this.totalSize += size;
+  }
+
+  private delete(key: string): void {
+    const entry = this.entries.get(key);
+    if (!entry) return;
+    this.totalSize -= entry.size;
+    this.entries.delete(key);
   }
 }
 
@@ -214,7 +241,7 @@ export class HttpClient {
       }
     }
     if (!options.noCache && text.length <= MAX_CACHEABLE_CHARS) {
-      this.cache.set(cacheKey, data);
+      this.cache.set(cacheKey, data, text.length);
     }
     return data;
   }
@@ -265,10 +292,11 @@ const MAX_ERROR_BODY_LENGTH = 2000;
 
 /**
  * Limits what an upstream error body can inject into the model context: HTML
- * error pages are dropped entirely, other bodies are truncated.
+ * error pages are dropped entirely, other bodies are truncated. Bodies often
+ * echo the request line, so URL-style key parameters are redacted here too.
  */
 export function sanitizeErrorBody(body: string): string {
-  const trimmed = body.trim();
+  const trimmed = redactUrl(body.trim());
   if (/^(<!doctype\s|<html[\s>])/i.test(trimmed)) {
     return '(HTML error page omitted)';
   }

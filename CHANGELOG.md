@@ -14,7 +14,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The optional `ORS_API_KEY` is now stripped from every tool result as a last
+  line of defense: it travels in an `Authorization` header, so an upstream (or
+  a misconfigured `ORS_BASE_URL` host) echoing the request could previously
+  have leaked it into the model context through an error body. URL-style key
+  parameters are additionally redacted from sanitized error bodies.
+- The `mcp-publisher` binary in the release workflows is now version-pinned and
+  checksum-verified instead of floating on `releases/latest` — it runs with the
+  job's OIDC identity, which proves registry ownership.
+- The npm/registry publish in `release.yml` now waits for its own Trivy
+  container scan instead of racing the scan in `ci.yml`.
+- The response cache now has an aggregate 32 MB byte budget on top of the entry
+  cap; the caps alone allowed ~500 MB of retained upstream JSON.
+- Every tool call gets a 120 s wall-clock deadline: many-waypoint requests
+  behind the 1 req/s geocoding limiter could previously occupy the queue for
+  minutes past any client timeout.
+- POI core tags are truncated with the same 500-char value budget as
+  `poi_details` tags, and `countrycodes` input length is bounded.
+
 ### Fixed
+
+- Validated base URLs are returned in their WHATWG-normalized form instead of
+  the raw input string.
+- The container now exits promptly on SIGTERM/SIGINT — as PID 1, Node gets no
+  default signal handling, so `docker stop` used to wait out its grace period
+  and SIGKILL.
 
 - The optional `ORS_API_KEY` is now removed from the environment before any
   configuration validation can throw. Previously a caller that caught the

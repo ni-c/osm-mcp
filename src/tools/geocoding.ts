@@ -39,6 +39,7 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
         language,
         countrycodes: z
           .string()
+          .max(200)
           .regex(/^[a-zA-Z]{2}(,[a-zA-Z]{2})*$/)
           .optional()
           .describe(

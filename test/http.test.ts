@@ -100,6 +100,29 @@ describe('TtlCache', () => {
     cache.set('a', 1);
     expect(cache.get('a')).toBeUndefined();
   });
+
+  it('evicts oldest entries once the byte budget is exceeded', () => {
+    const cache = new TtlCache(1000, 10, () => 0, 100);
+    cache.set('a', 'A', 60);
+    cache.set('b', 'B', 50);
+    expect(cache.get('a')).toBeUndefined();
+    expect(cache.get('b')).toBe('B');
+  });
+
+  it('never admits a single entry larger than the byte budget', () => {
+    const cache = new TtlCache(1000, 10, () => 0, 100);
+    cache.set('big', 'X', 500);
+    expect(cache.get('big')).toBeUndefined();
+  });
+
+  it('frees the byte budget when an entry is overwritten', () => {
+    const cache = new TtlCache(1000, 10, () => 0, 100);
+    cache.set('a', 'A1', 90);
+    cache.set('a', 'A2', 90);
+    cache.set('b', 'B', 10);
+    expect(cache.get('a')).toBe('A2');
+    expect(cache.get('b')).toBe('B');
+  });
 });
 
 describe('HttpClient', () => {

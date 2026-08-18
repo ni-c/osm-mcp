@@ -122,7 +122,10 @@ function validateUrl(name: string, value: string): string {
       `osm-mcp: WARNING: ${name} uses plain http to a non-local host — requests travel unencrypted`
     );
   }
-  return value.replace(/\/+$/, '');
+  // Return the parsed URL, not the raw input: the WHATWG parser has already
+  // stripped whitespace and normalized the host during validation, and the
+  // value used downstream should be exactly the value that was validated.
+  return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
 }
 
 function isCleartextRemote(url: string): boolean {

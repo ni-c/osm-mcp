@@ -16,6 +16,11 @@ async function main(): Promise<void> {
     throw error;
   }
 
+  // In a container Node runs as PID 1 and gets no default SIGTERM handling —
+  // without this, `docker stop` waits out its grace period and SIGKILLs.
+  process.on('SIGTERM', () => process.exit(0));
+  process.on('SIGINT', () => process.exit(0));
+
   const server = createServer(config);
   // stdout belongs to the protocol; everything human-readable goes to stderr.
   await server.connect(new StdioServerTransport());

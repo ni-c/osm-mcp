@@ -4,6 +4,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { loadConfig } from '../src/config.js';
+import { run } from '../src/result.js';
 import { createServer } from '../src/server.js';
 
 const TOOLS = [
@@ -304,5 +305,61 @@ describe('server', () => {
     };
     expect(data.suggestion.name).toBe('Cafe Mitte');
     expect(data.travel_times).toHaveLength(2);
+  });
+});
+
+describe('secret redaction', () => {
+  it('never echoes the ORS key, even when an upstream error body contains it', async () => {
+    const KEY = 'sekret-ors-key-12345678';
+    stubFetch(
+      () =>
+        new Response(`upstream echo: Authorization: Bearer ${KEY}`, {
+          status: 500,
+        })
+    );
+    const client = await connect({ ORS_API_KEY: KEY });
+    const result = await client.callTool({
+      name: 'route',
+      arguments: {
+        waypoints: ['49.7596,6.6439', '49.6116,6.1319'],
+        profile: 'car',
+      },
+    });
+    expect(result.isError).toBe(true);
+    const text = firstText(result);
+    expect(text).not.toContain(KEY);
+    expect(text).toContain('[redacted]');
+  });
+});
+
+describe('schema strip invariant', () => {
+  it('drops unknown caller-supplied fields before anything reaches upstream', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ elements: [] }));
+    const client = await connect();
+    await client.callTool({
+      name: 'find_nearby_pois',
+      arguments: {
+        near: '49.75,6.64',
+        category: 'cafe',
+        format: 'evil-format',
+        out: 'evil-out',
+        data: 'evil-data',
+      },
+    });
+    expect(fetchMock).toHaveBeenCalled();
+    for (const call of fetchMock.mock.calls) {
+      const url = String(call[0]);
+      const body = String((call[1] as RequestInit | undefined)?.body ?? '');
+      expect(url + body).not.toContain('evil-');
+    }
+  });
+});
+
+describe('tool call deadline', () => {
+  it('aborts a stuck call at the deadline with an actionable error', async () => {
+    const result = await run(() => new Promise(() => {}), 20);
+    expect(result.isError).toBe(true);
+    const content = result.content as Array<{ text?: string }>;
+    expect(content[0]?.text).toContain('deadline');
   });
 });

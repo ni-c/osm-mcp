@@ -43,7 +43,14 @@ function coreTags(poi: Poi): Record<string, string> {
   const tags: Record<string, string> = {};
   for (const key of CORE_TAGS) {
     const value = poi.tags[key];
-    if (value) tags[key] = value;
+    // Same value budget as capTags: this is the higher-volume path (up to 25
+    // results per call), so it must not carry unbounded tag values either.
+    if (value) {
+      tags[key] =
+        value.length > MAX_TAG_VALUE_LENGTH
+          ? `${value.slice(0, MAX_TAG_VALUE_LENGTH)}… (truncated)`
+          : value;
+    }
   }
   return tags;
 }
