@@ -1,6 +1,6 @@
 {
   "name": "osm-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "mcpName": "io.github.ni-c/osm-mcp",
   "description": "MCP server for OpenStreetMap: geocoding, walking/driving/cycling distances, route optimization, isochrones and POI search",
   "keywords": [

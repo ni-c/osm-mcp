@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
+## [0.1.1] - 2026-08-18
+
+### Added
+
+- Documentation site at <https://osm-mcp.ni-c.de>: guides, a complete tool
+  reference generated from the actual schemas, FAQ and this changelog.
+- Architecture diagram and demo recording, each generated from a single
+  source (`npm run assets`, `docs/demo.tape`) and verified in CI.
+- Fully automated release pipeline: npm publishing with provenance via
+  Trusted Publishing, GitHub releases from the changelog, MCP Registry and
+  multi-arch GHCR publishing on tag push.
+
 ## [0.1.0] - 2026-08-18
 
 ### Security
