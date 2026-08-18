@@ -114,8 +114,11 @@ jobs:
       - name: Wait for the GHCR image tag
         run: |
           version="$(node -p "require('./package.json').version")"
-          token="$(curl -fsS 'https://ghcr.io/token?scope=repository:ni-c/osm-mcp:pull&service=ghcr.io' | jq -r .token)"
           for i in $(seq 1 60); do
+            # Fetch the token inside the loop: anonymous GHCR tokens are
+            # short-lived, and one issued while the package was still private
+            # stays permission-less for its whole lifetime.
+            token="$(curl -fsS 'https://ghcr.io/token?scope=repository:ni-c/osm-mcp:pull&service=ghcr.io' | jq -r .token)"
             if curl -fsS -o /dev/null -H "Authorization: Bearer $token" \
                 -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
                 "https://ghcr.io/v2/ni-c/osm-mcp/manifests/$version"; then
