@@ -1,0 +1,97 @@
+import { z } from 'zod';
+
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
+import type { Deps } from '../deps.js';
+import { run, untrustedResult } from '../result.js';
+
+const language = z
+  .string()
+  .regex(/^[a-zA-Z-]{2,10}$/)
+  .optional()
+  .describe(
+    'Language for place names (IETF code like "en" or "de"), default "en"'
+  );
+
+export function registerGeocodingTools(server: McpServer, deps: Deps): void {
+  server.registerTool(
+    'geocode',
+    {
+      title: 'Geocode a place or address',
+      description:
+        'Converts a place name or address into coordinates using OpenStreetMap. ' +
+        'Returns matching places with lat/lon, a display label and the OSM id. ' +
+        'Provider "nominatim" (default) is best for addresses; "photon" is ' +
+        'typo-tolerant and better for fuzzy place names.',
+      inputSchema: {
+        query: z.string().min(1).max(300).describe('Place name or address'),
+        provider: z
+          .enum(['nominatim', 'photon'])
+          .optional()
+          .describe('Geocoder to use, default nominatim'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe('Maximum number of results, default 3'),
+        language,
+        countrycodes: z
+          .string()
+          .regex(/^[a-zA-Z]{2}(,[a-zA-Z]{2})*$/)
+          .optional()
+          .describe(
+            'Restrict to countries: comma-separated ISO 3166-1 alpha-2 codes, e.g. "de,lu" (Nominatim only)'
+          ),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ query, provider, limit, language, countrycodes }) =>
+      run(async () => {
+        const results = await deps.resolver.search(query, {
+          ...(provider ? { provider } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+          ...(language ? { language } : {}),
+          ...(countrycodes ? { countrycodes } : {}),
+        });
+        if (results.length === 0) {
+          return untrustedResult({
+            results: [],
+            note: `No match for "${query}". Try the other provider or a broader query.`,
+          });
+        }
+        return untrustedResult({ provider: provider ?? 'nominatim', results });
+      })
+  );
+
+  server.registerTool(
+    'reverse_geocode',
+    {
+      title: 'Reverse geocode coordinates',
+      description:
+        'Converts coordinates into the nearest address or place name (Nominatim).',
+      inputSchema: {
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+        language,
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ latitude, longitude, language }) =>
+      run(async () => {
+        const result = await deps.nominatim.reverse(
+          latitude,
+          longitude,
+          language ?? 'en'
+        );
+        if (!result) {
+          return untrustedResult({
+            result: null,
+            note: 'No address found near these coordinates.',
+          });
+        }
+        return untrustedResult({ result });
+      })
+  );
+}

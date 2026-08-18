@@ -1,0 +1,45 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Lockstep packages: bumped separately they arrive as individually broken PRs.
+      vitest:
+        patterns:
+          - vitest
+          - '@vitest/*'
+      eslint:
+        patterns:
+          - eslint
+          - '@eslint/*'
+          - typescript-eslint
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Exists so the digest-pinned base image gets refreshed at all. Node majors are
+  # excluded because Dependabot offers whatever tag is newest, while the runtime
+  # image has to sit on an ACTIVE LTS line — and roughly half of all Node majors
+  # never become LTS. Crossing an LTS boundary is a decision, not an update.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # init and analyze are separate dependencies to Dependabot but must always
+      # move together — a version mismatch kills the codeql job.
+      codeql:
+        patterns:
+          - github/codeql-action*

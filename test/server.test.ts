@@ -1,0 +1,308 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+
+import { loadConfig } from '../src/config.js';
+import { createServer } from '../src/server.js';
+
+const TOOLS = [
+  'geocode',
+  'reverse_geocode',
+  'route',
+  'route_matrix',
+  'optimize_route',
+  'isochrone',
+  'find_nearby_pois',
+  'poi_details',
+  'suggest_meeting_point',
+  'straight_line_distance',
+  'map_link',
+];
+
+async function connect(env: Record<string, string> = {}): Promise<Client> {
+  const server = createServer(loadConfig(env as NodeJS.ProcessEnv));
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'test', version: '0.0.0' });
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+  return client;
+}
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function stubFetch(handler: (url: string, init?: RequestInit) => Response) {
+  const mock = vi.fn(async (url: string | URL | Request, init?: RequestInit) =>
+    handler(String(url), init)
+  );
+  vi.stubGlobal('fetch', mock);
+  return mock;
+}
+
+function firstText(result: Awaited<ReturnType<Client['callTool']>>): string {
+  const content = result.content as Array<{ type: string; text?: string }>;
+  return content[0]?.text ?? '';
+}
+
+function parseJson<T>(result: Awaited<ReturnType<Client['callTool']>>): T {
+  const text = firstText(result);
+  return JSON.parse(text.slice(text.indexOf('{'))) as T;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('server', () => {
+  it('registers all eleven tools with an empty environment', async () => {
+    const client = await connect();
+    const names = (await client.listTools()).tools.map((t) => t.name).sort();
+    expect(names).toEqual([...TOOLS].sort());
+  });
+
+  it('routes on foot via the routed-foot prefix and formats compactly', async () => {
+    const fetchMock = stubFetch(() =>
+      jsonResponse({
+        code: 'Ok',
+        routes: [
+          {
+            distance: 44_000,
+            duration: 31_680,
+            legs: [{ distance: 44_000, duration: 31_680, summary: 'B49' }],
+          },
+        ],
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'route',
+      arguments: {
+        waypoints: ['49.7596,6.6439', '49.6116,6.1319'],
+        profile: 'foot',
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/routed-foot/');
+    const data = parseJson<Record<string, unknown>>(result);
+    expect(data.distance).toBe('44 km');
+    expect(data.duration).toBe('8 h 48 min');
+    expect(data.engine).toBe('osrm');
+  });
+
+  it('uses ORS for routing when a key is configured', async () => {
+    const fetchMock = stubFetch(() =>
+      jsonResponse({
+        routes: [{ summary: { distance: 44_000, duration: 31_680 } }],
+      })
+    );
+    const client = await connect({ ORS_API_KEY: 'k' });
+    const result = await client.callTool({
+      name: 'route',
+      arguments: {
+        waypoints: ['49.7596,6.6439', '49.6116,6.1319'],
+        profile: 'car',
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(String(fetchMock.mock.calls[0]![0])).toContain(
+      '/v2/directions/driving-car'
+    );
+    const data = parseJson<Record<string, unknown>>(result);
+    expect(data.engine).toBe('openrouteservice');
+  });
+
+  it('rejects an oversized matrix without calling any API', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({}));
+    const client = await connect();
+    const many = Array.from({ length: 13 }, (_, i) => `49.${i},6.0`);
+    const result = await client.callTool({
+      name: 'route_matrix',
+      arguments: { origins: many, destinations: many, profile: 'car' },
+    });
+    expect(result.isError).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('requires exactly one isochrone budget', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({}));
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'isochrone',
+      arguments: {
+        center: '49.75,6.64',
+        profile: 'foot',
+        minutes: 15,
+        kilometers: 2,
+      },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toContain('exactly one');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('marks OSM-sourced content as untrusted data', async () => {
+    stubFetch(() =>
+      jsonResponse([
+        {
+          lat: '49.75',
+          lon: '6.64',
+          display_name: 'Trier',
+          osm_type: 'relation',
+          osm_id: 1,
+        },
+      ])
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'geocode',
+      arguments: { query: 'Trier' },
+    });
+    expect(firstText(result)).toMatch(/^The following is user-contributed/);
+  });
+
+  it('rejects malformed OSM ids before any request', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({}));
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'poi_details',
+      arguments: { osm_id: 'node/../secrets' },
+    });
+    expect(result.isError).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('computes straight-line distances fully offline for coordinates', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({}));
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'straight_line_distance',
+      arguments: { from: '49.7596,6.6439', to: '49.6116,6.1319' },
+    });
+    expect(result.isError).toBeFalsy();
+    const data = parseJson<{ distance_m: number }>(result);
+    expect(data.distance_m).toBeGreaterThan(38_000);
+    expect(data.distance_m).toBeLessThan(43_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('builds marker and directions links offline for coordinates', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({}));
+    const client = await connect();
+    const marker = await client.callTool({
+      name: 'map_link',
+      arguments: { place: '49.75,6.64' },
+    });
+    expect(firstText(marker)).toContain(
+      'https://www.openstreetmap.org/?mlat=49.75&mlon=6.64'
+    );
+    const directions = await client.callTool({
+      name: 'map_link',
+      arguments: { from: '49.75,6.64', to: '49.61,6.13', profile: 'car' },
+    });
+    expect(firstText(directions)).toContain('engine=fossgis_osrm_car');
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const invalid = await client.callTool({
+      name: 'map_link',
+      arguments: { place: '49.75,6.64', from: '49.75,6.64', to: '49.61,6.13' },
+    });
+    expect(invalid.isError).toBe(true);
+  });
+
+  it('finds nearby POIs, sorts by distance and keeps core tags only', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        elements: [
+          {
+            type: 'node',
+            id: 2,
+            lat: 49.76,
+            lon: 6.65,
+            tags: { name: 'Far Cafe', amenity: 'cafe', internal_junk: 'x' },
+          },
+          {
+            type: 'node',
+            id: 1,
+            lat: 49.7501,
+            lon: 6.6401,
+            tags: {
+              name: 'Near Cafe',
+              amenity: 'cafe',
+              opening_hours: 'Mo-Su 08:00-18:00',
+            },
+          },
+        ],
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'find_nearby_pois',
+      arguments: { near: '49.75,6.64', category: 'cafe' },
+    });
+    const text = firstText(result);
+    const data = JSON.parse(text.slice(text.indexOf('{'))) as {
+      results: Array<Record<string, unknown>>;
+    };
+    expect(data.results[0]!.name).toBe('Near Cafe');
+    expect(data.results[0]!.opening_hours).toBe('Mo-Su 08:00-18:00');
+    expect(data.results[1]!.name).toBe('Far Cafe');
+    expect(data.results[1]!.internal_junk).toBeUndefined();
+  });
+
+  it('suggests the fairest meeting venue from the matrix', async () => {
+    stubFetch((url) => {
+      if (url.includes('interpreter') || url.includes('overpass')) {
+        return jsonResponse({
+          elements: [
+            {
+              type: 'node',
+              id: 10,
+              lat: 49.75,
+              lon: 6.64,
+              tags: { name: 'Cafe Mitte', amenity: 'cafe' },
+            },
+            {
+              type: 'node',
+              id: 11,
+              lat: 49.751,
+              lon: 6.641,
+              tags: { name: 'Cafe Schief', amenity: 'cafe' },
+            },
+          ],
+        });
+      }
+      // durations: venue 0 balanced (10/12 min), venue 1 lopsided (2/40 min)
+      return jsonResponse({
+        code: 'Ok',
+        durations: [
+          [600, 120],
+          [720, 2400],
+        ],
+        distances: [
+          [800, 200],
+          [900, 3000],
+        ],
+      });
+    });
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'suggest_meeting_point',
+      arguments: { locations: ['49.74,6.63', '49.76,6.65'] },
+    });
+    const text = firstText(result);
+    const data = JSON.parse(text.slice(text.indexOf('{'))) as {
+      suggestion: { name: string };
+      travel_times: Array<{ duration: string }>;
+    };
+    expect(data.suggestion.name).toBe('Cafe Mitte');
+    expect(data.travel_times).toHaveLength(2);
+  });
+});
