@@ -12,9 +12,9 @@ FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a5
 WORKDIR /app
 ENV NODE_ENV=production
 
-# The base image's bundled npm lags behind and its vendored dependencies show
-# up in image scans; the runtime itself never calls npm.
-RUN npm install -g npm@11 --ignore-scripts && npm cache clean --force
+# The runtime only ever executes `node dist/index.js` — remove the bundled npm
+# entirely instead of chasing CVEs in its vendored dependencies.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
