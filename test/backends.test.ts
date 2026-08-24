@@ -186,7 +186,7 @@ describe('OverpassBackend', () => {
     const urls: string[] = [];
     stubFetch((url) => {
       urls.push(url);
-      if (url.startsWith('https://overpass-api.de')) {
+      if (new URL(url).hostname === 'overpass-api.de') {
         return new Response('too many', { status: 429 });
       }
       return jsonResponse({
