@@ -7,6 +7,7 @@
 [![Container](https://img.shields.io/badge/ghcr.io-ni--c%2Fosm--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/ni-c/osm-mcp/pkgs/container/osm-mcp)
 [![license](https://img.shields.io/npm/l/osm-mcp)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-osm--mcp.ni--c.de-4f46e5)](https://osm-mcp.ni-c.de)
+[![Sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 An [MCP](https://modelcontextprotocol.io) server for
 [OpenStreetMap](https://www.openstreetmap.org): geocoding, walking/driving/cycling

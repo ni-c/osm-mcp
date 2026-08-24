@@ -25,6 +25,7 @@
     "url": "https://github.com/ni-c/osm-mcp/issues"
   },
   "homepage": "https://osm-mcp.ni-c.de",
+  "funding": "https://github.com/sponsors/ni-c",
   "type": "module",
   "bin": {
     "osm-mcp": "dist/index.js"
