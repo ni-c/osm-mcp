@@ -1,3 +1,4 @@
+import { internalHostKind } from './hosts.js';
 import { packageVersion } from './version.js';
 
 export interface Config {
@@ -134,13 +135,8 @@ function isCleartextRemote(url: string): boolean {
 }
 
 function isLoopbackHost(hostname: string): boolean {
-  // URL.hostname keeps the brackets around an IPv6 literal — strip them so
-  // every bracketed form matches, not just the exact string '[::1]'.
-  const host = hostname.replace(/^\[|\]$/g, '');
-  return (
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    host.startsWith('127.') ||
-    host === '::1'
-  );
+  // The shared classifier, so every spelling of a loopback address is
+  // recognised — including http://[::ffff:127.0.0.1] and 'localhost.' with its
+  // root label, which the string comparison this replaced did not see.
+  return internalHostKind(hostname) === 'loopback';
 }
