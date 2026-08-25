@@ -12,6 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
+## [0.1.2] - 2026-08-26
+
+### Changed
+
+- The check that decides whether a configured endpoint is local — and therefore
+  whether sending an API key over plain `http` is worth warning about — now uses
+  the same host classifier as the other MCP servers in this family, in
+  `src/hosts.ts`. The string comparison it replaces missed several spellings of
+  the same address: `http://[::ffff:127.0.0.1]`, which `URL` canonicalises to
+  `[::ffff:7f00:1]` before any check sees it, and `localhost.` with its root
+  label. It also treated `127.example.com` as loopback, because it matched on the
+  `127.` prefix, and so stayed quiet about a plain-http URL to a public host.
+
+Nothing else changes: every endpoint this server talks to comes from the
+environment, and no tool takes a URL, so there is no request whose target a
+caller can choose.
+
 ## [0.1.1] - 2026-08-18
 
 ### Added
