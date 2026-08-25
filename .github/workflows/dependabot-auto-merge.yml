@@ -13,6 +13,12 @@ name: Dependabot auto-merge
 #     patch or minor are queued. Majors — and anything whose update type cannot be
 #     determined — stay manual rather than slipping through.
 #
+# github_actions bumps are also excluded, for a different reason: they edit files
+# under .github/workflows/, and merging such a PR requires the `workflow` scope,
+# which the Actions GITHUB_TOKEN can never have. GitHub accepts the queued
+# auto-merge and then leaves it pending forever without any error, so these PRs
+# just sat there looking about to merge. Better to be explicit: they stay manual.
+#
 # /docs is excluded on purpose. Its build runs in docs.yml, which is path filtered
 # and therefore cannot be a required check on every PR — so auto-merge would not wait
 # for it, and a bad VitePress bump could reach the published site unseen. That is one
@@ -38,6 +44,7 @@ jobs:
 
       - name: Queue for merge
         if: |
+          steps.metadata.outputs.package-ecosystem != 'github_actions' &&
           steps.metadata.outputs.directory != '/docs' &&
           (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
            steps.metadata.outputs.update-type == 'version-update:semver-minor')
