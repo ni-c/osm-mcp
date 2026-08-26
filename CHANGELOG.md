@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Fixed
+
+- The container image no longer ships OpenSSL 3.5.7-r0, which carries
+  **CVE-2026-14456** (denial of service via unbounded memory growth). The pinned
+  `node:24-alpine` digest is already the newest one; Alpine's fixed 3.5.8-r0 has
+  simply not been rebuilt into it yet, so the runtime stage now upgrades
+  `libcrypto3` and `libssl3` by name. Upgrading those two rather than running a
+  blanket `apk upgrade` keeps the rest of the image exactly as the digest pins
+  it. The step can go once the base image ships the fix.
+
 ## [0.1.2] - 2026-08-26
 
 ### Changed
