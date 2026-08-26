@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
-## [Unreleased]
+## [0.2.0] - 2026-08-27
 
 ### Added
 
@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   An entry that matches no tool **stops the server at startup**, naming the
   entry and listing the real names, rather than being ignored: an ignored typo
   leaves a tool missing from `tools/list` with nothing pointing at the cause.
+
+### Changed
+
+- The README now carries the same eight badges, in the same order, as every other
+  MCP server in this family, all of them reading from npm rather than hard-coded;
+  the opening follows one shape; and the standalone "Full documentation" line is
+  gone, because the docs badge three lines above it points at the same page.
 
 ### Fixed
 
