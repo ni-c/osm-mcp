@@ -16,6 +16,11 @@ Lets MCP clients like Claude Code, Claude Desktop or Codex answer questions abou
 places: geocoding, walking, driving and cycling distances and durations, multi-stop
 route optimization, isochrones and POI search — 11 tools, all read-only.
 
+Eleven tools is the ceiling, not the floor: `OSM_ALLOW_TOOLS=essential`
+registers a curated six instead, and a model picks the right tool far more
+reliably from six than from eleven — see
+[choosing which tools load](#choosing-which-tools-load).
+
 All backends are free public OpenStreetMap services, so **no API key is required**.
 An OpenRouteService key can be supplied optionally to switch the routing engine.
 
@@ -67,6 +72,29 @@ Every variable is optional — the server works out of the box.
 | `ORS_API_KEY`        | –                                                                                         | Optional [OpenRouteService](https://openrouteservice.org) key (secret). When set, routes, matrices and isochrones use ORS instead of OSRM/Valhalla. Free tier: 2000 directions/day, 40/minute. |
 | `ORS_BASE_URL`       | `https://api.openrouteservice.org`                                                        | OpenRouteService endpoint                                                                                                                                                                      |
 | `OSM_CACHE_TTL`      | `3600`                                                                                    | Seconds identical upstream responses are served from the in-memory cache (`0` disables caching)                                                                                                |
+| `OSM_ALLOW_TOOLS`    | no                                                                                        | Comma-separated tool names, `list_*` prefixes, or `essential` for a curated preset                                                                                                             |
+| `OSM_DENY_TOOLS`     | no                                                                                        | Same syntax; removed from whatever `OSM_ALLOW_TOOLS` left                                                                                                                                      |
+
+### Choosing which tools load
+
+`OSM_ALLOW_TOOLS` and `OSM_DENY_TOOLS` take comma-separated tool names;
+a trailing `*` matches a whole family. `essential` is a curated preset of
+six: `geocode`, `reverse_geocode`, `find_nearby_pois`, `poi_details`, `route`, `map_link`.
+
+```sh
+OSM_ALLOW_TOOLS=essential
+OSM_ALLOW_TOOLS=geocode,route,find_nearby_pois
+OSM_DENY_TOOLS=isochrone,optimize_route
+```
+
+An entry that matches no tool aborts startup and names it, so a typo cannot
+silently hide a tool — an absent tool is not something anyone traces back to an
+environment variable. A filtered tool is never registered, so it is absent from
+`tools/list` and unknown to `tools/call` alike.
+
+If you run several of these servers at once, [mcp-hub](https://mcp-hub.ni-c.de)
+is the other answer — its `/hub` endpoint replaces every server's tools with six
+meta-tools.
 
 ## Install
 

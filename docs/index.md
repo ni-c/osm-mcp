@@ -19,6 +19,8 @@ features:
     details: The public OSRM demo servers ignore the profile inside the OSRM URL and always answer with car routes unless the FOSSGIS routed-foot/bike/car path prefixes are used. Most OSM MCP servers get this wrong; this one uses the prefixes, and its live smoke test asserts that foot routes come out much slower than car routes.
   - title: Policy-compliant by construction
     details: Per-service client-side rate limiting, a mandatory identifying User-Agent, response caching, capped Overpass concurrency and automatic failover to an Overpass mirror on 429/5xx — the published usage policies of the shared community services are enforced in code.
+  - title: Eleven tools, or the three you need
+    details: 'OSM_ALLOW_TOOLS cuts finer — essential for a curated six, your own comma-separated list, or a whole family with list_* — and OSM_DENY_TOOLS subtracts. Whatever is filtered out does not exist on the protocol rather than failing when called, and a name that matches no tool stops the server at startup instead of quietly going missing.'
   - title: No API key, read-only by design
     details: Every backend is a free public OpenStreetMap service and all 11 tools are read-only. The only optional secret is an OpenRouteService key, which is scrubbed from the environment after loading and redacted from error messages.
 ---

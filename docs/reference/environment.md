@@ -63,3 +63,22 @@ they reach the model context.
 | Matrix size               | origins + destinations ≤ 25 |
 | Turn-by-turn steps        | first 100                   |
 | `poi_details` tag budget  | 60 tags, 500 chars per value |
+
+## Narrowing the tool list
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `OSM_ALLOW_TOOLS` | no | Tool names, `list_*` prefixes or `essential`; only these register |
+| `OSM_DENY_TOOLS` | no | Same syntax; subtracted from whatever the allow list left |
+
+Both are comma-separated. Each entry is either an exact tool name or a prefix with
+a single trailing `*`. Entries are trimmed and matched case-insensitively; empty
+entries are ignored, and a value that is empty or only whitespace counts as unset —
+`OSM_ALLOW_TOOLS=` in a compose file does not mean "allow nothing".
+`essential` is recognised only in the allow list, and selects `geocode`, `reverse_geocode`, `find_nearby_pois`, `poi_details`, `route`, `map_link`.
+
+**An entry that matches no tool aborts startup**, naming the entry and listing the
+valid names, as does a malformed pattern such as `*_x` or `list_*_x`. The
+alternative — ignoring the entry — leaves a tool missing from `tools/list` with
+nothing pointing at the cause. If both lists together remove everything, the server
+refuses to start rather than offering an empty tool list.
