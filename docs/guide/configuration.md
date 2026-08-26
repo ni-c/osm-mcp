@@ -102,3 +102,42 @@ Not configurable, deliberately:
 | Matrix size                   | origins + destinations ≤ 25 | Stays within the public OSRM usage policy                      |
 | Turn-by-turn steps            | first 100                 | A continental route has tens of thousands of steps               |
 | POI tags in `poi_details`     | 60 tags, 500 chars each   | Mega-relations carry hundreds of tags                            |
+
+## Choosing the tools that load
+
+Not every session needs every tool.
+`OSM_ALLOW_TOOLS` and `OSM_DENY_TOOLS` let you draw your own:
+
+```sh
+OSM_ALLOW_TOOLS=essential
+OSM_ALLOW_TOOLS=geocode,route,find_nearby_pois
+OSM_DENY_TOOLS=isochrone,optimize_route
+```
+
+Why bother, when all eleven work: a model chooses the right tool far more
+reliably from a handful than from a long list, and every tool it can see costs
+context on every single request. If this is the only MCP server in a session,
+eleven is fine. If it is one of six, it is not.
+
+**The syntax.** Comma-separated entries. An entry is either an exact tool name or
+a prefix with a trailing `*` — `list_*` matches every tool whose name starts with
+`list_`. Entries are trimmed and case-insensitive, empty ones are ignored, and an
+empty value counts as unset. Nothing else is a pattern: `*_x` and `list_*_x` are
+rejected rather than silently matching nothing.
+
+**`essential`** is a curated preset of six:
+
+`geocode`, `reverse_geocode`, `find_nearby_pois`, `poi_details`, `route`, `map_link`.
+
+It composes — naming a tool alongside it puts that one back, and
+`OSM_DENY_TOOLS` takes one away.
+
+**Both together.** `OSM_ALLOW_TOOLS` decides what is in;
+`OSM_DENY_TOOLS` is then subtracted from the result. With only a deny list,
+everything else stays.
+
+**A name that matches nothing stops the server**, with the offending entry and the
+list of real names. That is deliberate: the alternative is a tool quietly missing
+from `tools/list`, and nobody traces an absence back to an environment variable.
+The same applies to a pattern that matches no tool.
+

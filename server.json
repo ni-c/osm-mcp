@@ -30,6 +30,18 @@
           "isRequired": false,
           "isSecret": true,
           "format": "string"
+        },
+        {
+          "name": "OSM_ALLOW_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to register; 'essential' selects a curated preset (default: all tools)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "OSM_DENY_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to remove from whatever OSM_ALLOW_TOOLS left",
+          "isRequired": false,
+          "format": "string"
         }
       ]
     },
@@ -51,6 +63,18 @@
           "description": "Optional OpenRouteService key; switches routing/matrix/isochrones to ORS",
           "isRequired": false,
           "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "OSM_ALLOW_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to register; 'essential' selects a curated preset (default: all tools)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "OSM_DENY_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to remove from whatever OSM_ALLOW_TOOLS left",
+          "isRequired": false,
           "format": "string"
         }
       ]

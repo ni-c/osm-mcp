@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { NominatimBackend } from './backends/nominatim.js';
+import { buildToolFilter, installToolFilter } from './tool-filter.js';
 import { OrsBackend } from './backends/ors.js';
 import { OsrmBackend } from './backends/osrm.js';
 import { OverpassBackend } from './backends/overpass.js';
@@ -18,6 +19,10 @@ import { registerRoutingTools } from './tools/routing.js';
 import { packageVersion } from './version.js';
 
 export function createServer(config: Config): McpServer {
+  // Before anything is built: an unusable tool list should fail on the
+  // way in, not leave a server running with tools quietly missing.
+  const filter = buildToolFilter(config);
+
   // Last line of defense: no tool result may ever contain the key verbatim,
   // no matter which upstream echoed it.
   registerSecret(config.orsApiKey);
@@ -39,6 +44,10 @@ export function createServer(config: Config): McpServer {
     name: 'osm-mcp',
     version: packageVersion(),
   });
+
+  // Wraps server.registerTool, so it has to sit before the first
+  // register call and does not care how they are organised.
+  installToolFilter(server, filter);
 
   registerGeocodingTools(server, deps);
   registerRoutingTools(server, deps);

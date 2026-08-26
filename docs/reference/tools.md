@@ -1,5 +1,10 @@
 # Tool reference
 
+All eleven are registered unless you say otherwise. `OSM_ALLOW_TOOLS` and
+`OSM_DENY_TOOLS` narrow the list to the ones you want, and `essential` selects a
+curated six — see
+[choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
+
 All 11 tools, every one read-only (`readOnlyHint`). Two conventions run through
 the whole set:
 

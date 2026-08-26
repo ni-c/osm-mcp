@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import { ConfigError, loadConfig } from './config.js';
 import { createServer } from './server.js';
+import { ToolFilterError } from './tool-filter.js';
 
 async function main(): Promise<void> {
   let config;
@@ -21,7 +22,18 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => process.exit(0));
   process.on('SIGINT', () => process.exit(0));
 
-  const server = createServer(config);
+  let server;
+  try {
+    server = createServer(config);
+  } catch (error) {
+    // A bad tool list is operator feedback, not a crash: print the
+    // sentence on its own rather than behind "fatal error:".
+    if (error instanceof ToolFilterError) {
+      console.error(`osm-mcp: ${error.message}`);
+      process.exit(1);
+    }
+    throw error;
+  }
   // stdout belongs to the protocol; everything human-readable goes to stderr.
   await server.connect(new StdioServerTransport());
   console.error(

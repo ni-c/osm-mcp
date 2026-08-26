@@ -19,7 +19,15 @@ export interface Config {
   /** Optional OpenRouteService key; routing/matrix/isochrones switch to ORS when set. */
   orsApiKey: string | undefined;
   /** How long identical upstream responses are served from the in-memory cache. */
-  cacheTtlMs: number;
+  cacheTtlMs: number; /**
+   * Raw value of `OSM_ALLOW_TOOLS` — comma-separated tool names, `list_*`
+   * prefixes, or `essential`. Kept unparsed on purpose: this file is a mirror of
+   * the environment, and the names can only be checked against the tool
+   * catalogue, which `buildToolFilter` does.
+   */
+  allowTools: string | undefined;
+  /** Raw value of `OSM_DENY_TOOLS`, same shape, subtracted from the above. */
+  denyTools: string | undefined;
 }
 
 export class ConfigError extends Error {}
@@ -55,6 +63,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     `osm-mcp/${packageVersion()} (+https://github.com/ni-c/osm-mcp)`;
 
   const cacheTtlSeconds = env.OSM_CACHE_TTL ?? '3600';
+  const allowTools = env.OSM_ALLOW_TOOLS;
+  const denyTools = env.OSM_DENY_TOOLS;
   if (!/^\d+$/.test(cacheTtlSeconds)) {
     throw new ConfigError('OSM_CACHE_TTL must be a number of seconds');
   }
@@ -82,6 +92,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     orsUrl,
     orsApiKey,
     cacheTtlMs: Number(cacheTtlSeconds) * 1000,
+    allowTools,
+    denyTools,
   };
 }
 
