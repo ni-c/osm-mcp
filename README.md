@@ -4,21 +4,20 @@
 [![npm version](https://img.shields.io/npm/v/osm-mcp)](https://www.npmjs.com/package/osm-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/osm-mcp)](https://www.npmjs.com/package/osm-mcp)
 [![node](https://img.shields.io/node/v/osm-mcp)](https://nodejs.org)
-[![Container](https://img.shields.io/badge/ghcr.io-ni--c%2Fosm--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/ni-c/osm-mcp/pkgs/container/osm-mcp)
 [![license](https://img.shields.io/npm/l/osm-mcp)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-osm--mcp.ni--c.de-4f46e5)](https://osm-mcp.ni-c.de)
-[![Sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
+[![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fosm--mcp-blue)](https://github.com/ni-c/osm-mcp/pkgs/container/osm-mcp)
+[![docs](https://img.shields.io/badge/docs-osm--mcp.ni--c.de-informational)](https://osm-mcp.ni-c.de)
+[![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
-An [MCP](https://modelcontextprotocol.io) server for
-[OpenStreetMap](https://www.openstreetmap.org): geocoding, walking/driving/cycling
-distances and durations, multi-stop route optimization, isochrones and POI
-search — built for travel planning with AI assistants.
+A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
+[OpenStreetMap](https://www.openstreetmap.org), built for travel planning.
 
-11 tools, all read-only. All backends are free public OpenStreetMap services;
-**no API key is required**. An OpenRouteService key can be supplied optionally to
-switch the routing engine.
+Lets MCP clients like Claude Code, Claude Desktop or Codex answer questions about
+places: geocoding, walking, driving and cycling distances and durations, multi-stop
+route optimization, isochrones and POI search — 11 tools, all read-only.
 
-📖 **Full documentation: <https://osm-mcp.ni-c.de>**
+All backends are free public OpenStreetMap services, so **no API key is required**.
+An OpenRouteService key can be supplied optionally to switch the routing engine.
 
 <!-- <picture> is resolved against the colour scheme of the page showing it, so GitHub
      picks the variant that matches its own theme toggle. npm strips <picture> and
