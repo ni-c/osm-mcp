@@ -6,8 +6,8 @@
 // The foot-vs-car check at the end is the guard against the classic OSRM demo
 // pitfall: with the wrong URL layout the server silently returns car routes
 // for every profile, and walking times come out impossibly fast.
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { Client } from '@modelcontextprotocol/client';
 
 const serverPath = new URL('../dist/index.js', import.meta.url).pathname;
 const client = new Client({ name: 'smoke', version: '0.0.0' });

@@ -1,6 +1,5 @@
 import { z } from 'zod';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
 import { formatDistance, haversineMeters } from '../geo.js';
@@ -34,11 +33,11 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
         'Great-circle ("as the crow flies") distance between two places. ' +
         'Instant and independent of any road network — use route for real ' +
         'travel distances.',
-      inputSchema: {
+      inputSchema: z.object({
         from: waypoint,
         to: waypoint,
         language,
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ from, to, language }) =>
@@ -63,7 +62,7 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
         'Generates openstreetmap.org links to open in a browser: a marker link ' +
         'for a single place, or a directions link when from and to are given. ' +
         'Provide either "place", or both "from" and "to".',
-      inputSchema: {
+      inputSchema: z.object({
         place: z.optional(waypoint).describe('Place for a marker link'),
         from: z.optional(waypoint).describe('Start for a directions link'),
         to: z.optional(waypoint).describe('Destination for a directions link'),
@@ -72,7 +71,7 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
           .optional()
           .describe('Travel mode for the directions link, default foot'),
         language,
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ place, from, to, profile, language }) =>

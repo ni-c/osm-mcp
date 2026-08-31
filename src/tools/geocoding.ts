@@ -1,6 +1,5 @@
 import { z } from 'zod';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
 import { run, untrustedResult } from '../result.js';
@@ -23,7 +22,7 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
         'Returns matching places with lat/lon, a display label and the OSM id. ' +
         'Provider "nominatim" (default) is best for addresses; "photon" is ' +
         'typo-tolerant and better for fuzzy place names.',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().min(1).max(300).describe('Place name or address'),
         provider: z
           .enum(['nominatim', 'photon'])
@@ -45,7 +44,7 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
           .describe(
             'Restrict to countries: comma-separated ISO 3166-1 alpha-2 codes, e.g. "de,lu" (Nominatim only)'
           ),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ query, provider, limit, language, countrycodes }) =>
@@ -72,11 +71,11 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
       title: 'Reverse geocode coordinates',
       description:
         'Converts coordinates into the nearest address or place name (Nominatim).',
-      inputSchema: {
+      inputSchema: z.object({
         latitude: z.number().min(-90).max(90),
         longitude: z.number().min(-180).max(180),
         language,
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ latitude, longitude, language }) =>

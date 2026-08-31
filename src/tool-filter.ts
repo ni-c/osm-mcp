@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import { ALL_TOOLS, ESSENTIAL_TOOLS } from './tools/catalogue.js';
 
@@ -148,15 +148,17 @@ export function buildToolFilter(config: {
 export function installToolFilter(server: McpServer, filter: ToolFilter): void {
   if (!filter.active) return;
   const register = server.registerTool.bind(server);
-  // An object literal rather than a plain function so the method picks up the
-  // SDK's generic signature by contextual typing — the call sites keep their
-  // typed handler arguments and nothing needs a cast.
-  const wrapper: Pick<McpServer, 'registerTool'> = {
-    registerTool(name, config, cb) {
-      const tool = register(name, config, cb);
-      if (!filter.selected.has(name)) tool.remove();
-      return tool;
-    },
-  };
-  server.registerTool = wrapper.registerTool;
+  // `registerTool` is overloaded in SDK v2 — the raw-shape `inputSchema` form
+  // survives as a deprecated second signature — and TypeScript does not
+  // contextually type the parameters of an implementation written against an
+  // overloaded method. So the wrapper names its own parameters and is asserted
+  // back to the method's type. Only `name` is read here; `config` and `cb` are
+  // passed through untouched, and every call site keeps the SDK's own types,
+  // because `server.registerTool` still has the SDK's own type.
+  const wrapper = ((name: string, config: never, cb: never) => {
+    const tool = register(name, config, cb);
+    if (!filter.selected.has(name)) tool.remove();
+    return tool;
+  }) as McpServer['registerTool'];
+  server.registerTool = wrapper;
 }

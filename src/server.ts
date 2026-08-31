@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/server';
 
 import { NominatimBackend } from './backends/nominatim.js';
 import { buildToolFilter, installToolFilter } from './tool-filter.js';

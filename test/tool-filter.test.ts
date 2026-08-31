@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 
 import { loadConfig } from '../src/config.js';
 import { createServer } from '../src/server.js';
@@ -127,15 +124,15 @@ describe('a filtered-out tool', () => {
       server.connect(serverTransport),
     ]);
 
-    const result = (await client.callTool({
-      name: 'isochrone',
-      arguments: {},
-    })) as CallToolResult;
-
-    expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toContain(
-      'Tool isochrone not found'
-    );
+    // SDK v2 reports an unknown tool as a JSON-RPC error rather than as a
+    // result carrying isError. Either way the call fails and nothing reaches
+    // the API, which is what this test is about.
+    await expect(
+      client.callTool({
+        name: 'isochrone',
+        arguments: {},
+      })
+    ).rejects.toThrow('Tool isochrone not found');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

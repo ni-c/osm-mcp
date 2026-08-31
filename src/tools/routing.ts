@@ -1,6 +1,5 @@
 import { z } from 'zod';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
 import { formatDistance, formatDuration, haversineMeters } from '../geo.js';
@@ -51,7 +50,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         'are visited in the given order. Set include_steps for a turn-by-turn ' +
         'summary. Use route_matrix to compare many pairs, optimize_route to ' +
         'reorder stops.',
-      inputSchema: {
+      inputSchema: z.object({
         waypoints: z
           .array(waypoint)
           .min(2)
@@ -63,7 +62,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
           .optional()
           .describe('Include a turn-by-turn step summary, default false'),
         language,
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ waypoints, profile, include_steps, language }) =>
@@ -111,12 +110,12 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         'Computes travel times and distances from every origin to every ' +
         'destination in one call — ideal for comparing options (e.g. 5 hotels ' +
         'against 3 sights). Cells are null where no route exists.',
-      inputSchema: {
+      inputSchema: z.object({
         origins: z.array(waypoint).min(1).max(12),
         destinations: z.array(waypoint).min(1).max(12),
         profile,
         language,
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ origins, destinations, profile, language }) =>
@@ -155,7 +154,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         'optimization) and returns the optimized itinerary with total distance ' +
         'and time. With roundtrip (default) the tour returns to the first stop; ' +
         'without it the first stop is the start and the last stop the end.',
-      inputSchema: {
+      inputSchema: z.object({
         stops: z.array(waypoint).min(3).max(12),
         profile,
         roundtrip: z
@@ -163,7 +162,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
           .optional()
           .describe('Return to the first stop at the end, default true'),
         language,
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ stops, profile, roundtrip, language }) =>
@@ -201,13 +200,13 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         'budget ("what is reachable in 15 minutes on foot?"). Returns a compact ' +
         'summary of the reachable area: bounding box and reach per compass ' +
         'direction. Give exactly one of minutes or kilometers.',
-      inputSchema: {
+      inputSchema: z.object({
         center: waypoint,
         profile,
         minutes: z.number().min(1).max(120).optional(),
         kilometers: z.number().min(0.1).max(100).optional(),
         language,
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ center, profile, minutes, kilometers, language }) =>
