@@ -10,11 +10,6 @@ updates:
         patterns:
           - vitest
           - '@vitest/*'
-      eslint:
-        patterns:
-          - eslint
-          - '@eslint/*'
-          - typescript-eslint
       # The catch-all has to repeat the patterns above as exclude-patterns.
       # Dependabot documents the first matching group as the winner and does not
       # behave that way (dependabot-core#9765, #14143): on 2026-08-27 it put
@@ -25,20 +20,9 @@ updates:
         exclude-patterns:
           - vitest
           - '@vitest/*'
-          - eslint
-          - '@eslint/*'
-          - typescript-eslint
         update-types:
           - minor
           - patch
-    ignore:
-      # typescript-eslint declares `typescript ">=4.8.4 <6.1.0"` as its peer, so
-      # TypeScript 7 does not install here at all — `npm install` aborts with
-      # ERESOLVE. Offering the major would be a weekly PR that can only be closed.
-      # Revisit when typescript-eslint widens the range.
-      - dependency-name: typescript
-        update-types:
-          - version-update:semver-major
 
   # The documentation site has its own manifest so its toolchain never lands in the
   # runtime image or the test matrix.

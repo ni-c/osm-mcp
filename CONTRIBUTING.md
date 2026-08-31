@@ -31,7 +31,7 @@ npm run smoke                         # opt-in LIVE test against the real servic
   usage policies of Nominatim, OSRM, Overpass, Valhalla and Photon.
 - **No new runtime dependencies** without a very good reason; the small tree is a
   feature.
-- Run `npm run lint` before pushing — it checks both eslint and prettier, and prettier
+- Run `npm run lint` before pushing — it checks both oxlint and prettier, and prettier
   also validates the YAML, JSON and Markdown files.
 
 ## Questions and bugs

@@ -186,7 +186,7 @@ For heavy or commercial use, self-host the services and point the
 
 ```sh
 npm install
-npm run lint          # eslint + prettier
+npm run lint          # oxlint + prettier
 npm test              # unit tests (all upstream APIs mocked)
 npm run test:coverage
 npm run build
