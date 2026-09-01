@@ -45,8 +45,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "smoke": "node scripts/smoke.mjs",
-    "assets": "node scripts/gen-assets.mjs",
-    "assets:check": "node scripts/gen-assets.mjs --check",
+    "assets": "svg-asset-set",
+    "assets:check": "svg-asset-set --check",
     "prepublishOnly": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
@@ -57,11 +57,11 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^4.1.11",
     "oxlint": "^1.80.0",
     "prettier": "^3.9.6",
+    "svg-asset-set": "https://github.com/ni-c/svg-asset-set/releases/download/v0.1.0/svg-asset-set-0.1.0.tgz",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }
