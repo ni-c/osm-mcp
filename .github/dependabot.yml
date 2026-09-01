@@ -4,6 +4,22 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # In semver, 0.x has its breaking changes in the *minor*, and these three are
+    # still there. Dependabot classifies 0.1 → 0.2 as semver-minor, which the
+    # auto-merge allowlist accepts — so a breaking 0.2.0 would merge itself into
+    # seventeen repositories as soon as CI went green. Patches keep flowing.
+    # Remove these three once the packages reach 1.0.0.
+    ignore:
+      - dependency-name: mcp-approval
+        update-types:
+          - version-update:semver-minor
+      - dependency-name: mcp-tool-allowlist
+        update-types:
+          - version-update:semver-minor
+      - dependency-name: mcp-internal-hosts
+        update-types:
+          - version-update:semver-minor
+
     groups:
       # Lockstep packages: bumped separately they arrive as individually broken PRs.
       vitest:
