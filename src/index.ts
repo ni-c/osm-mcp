@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 
 import { ConfigError, loadConfig } from './config.js';
 import { createServer } from './server.js';
-import { ToolFilterError } from './tool-filter.js';
+import { ToolFilterError } from 'mcp-tool-allowlist';
 
 async function main(): Promise<void> {
   let config;

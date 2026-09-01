@@ -1,9 +1,20 @@
+/**
+ * What this repository still has to prove about its tool filter.
+ *
+ * The filter lives in `mcp-tool-allowlist` and is tested there: pattern syntax,
+ * the preset, how a rejected entry is quoted back, the shape of every message.
+ * Repeating that here would test the dependency.
+ *
+ * What only this repository can assert is the wiring — that the catalogue names
+ * exactly the tools the server registers, that the messages name *these*
+ * variables, and that a filtered tool is really gone rather than merely hidden.
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 
 import { loadConfig } from '../src/config.js';
 import { createServer } from '../src/server.js';
-import { ToolFilterError } from '../src/tool-filter.js';
+import { ToolFilterError } from 'mcp-tool-allowlist';
 import { ALL_TOOLS, ESSENTIAL_TOOLS } from '../src/tools/catalogue.js';
 
 // This server takes its configuration through loadConfig rather than a Config
@@ -91,19 +102,6 @@ describe('selecting tools', () => {
     );
   });
 
-  it('trims entries, ignores case and skips empty ones', async () => {
-    expect(await toolNames({ OSM_ALLOW_TOOLS: ' GEOCODE ,, route, ' })).toEqual(
-      ['geocode', 'route']
-    );
-  });
-
-  it('treats an empty value as no filter at all', async () => {
-    // `OSM_ALLOW_TOOLS=` in a compose file must not mean "allow nothing".
-    expect(await toolNames({ OSM_ALLOW_TOOLS: '   ' })).toEqual(
-      [...ALL_TOOLS].sort()
-    );
-  });
-
   it('leaves an unconfigured server untouched', async () => {
     expect(await toolNames()).toEqual([...ALL_TOOLS].sort());
   });
@@ -146,21 +144,6 @@ describe('refusing an unusable list', () => {
     );
     expect(() => build({ OSM_ALLOW_TOOLS: 'geocodez' })).toThrow(
       /no tool matches "geocodez".*geocode/s
-    );
-  });
-
-  it('rejects a pattern that matches nothing', () => {
-    expect(() => build({ OSM_ALLOW_TOOLS: 'zzz_*' })).toThrow(
-      /no tool matches "zzz_\*"/
-    );
-  });
-
-  it('rejects a pattern with the star anywhere but last', () => {
-    expect(() => build({ OSM_ALLOW_TOOLS: '*_geocode' })).toThrow(
-      /single trailing "\*"/
-    );
-    expect(() => build({ OSM_ALLOW_TOOLS: 'route_*_x' })).toThrow(
-      /single trailing "\*"/
     );
   });
 
