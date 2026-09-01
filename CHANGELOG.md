@@ -12,6 +12,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Changed
+
+- Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
+  always did; the change is the package layout behind it.
+
+- The linter is **oxlint** instead of eslint plus typescript-eslint, which
+  lifts the TypeScript ceiling: typescript-eslint pins `typescript` below 6.1,
+  so this repository was held on TypeScript 6 by its linter rather than by its
+  code.
+
+- The tool filter, the host classifier and the documentation-asset generator
+  now come from **`mcp-tool-allowlist`**, **`mcp-internal-hosts`** and
+  **`svg-asset-set`** rather than from copies kept here — 674 fewer lines, and
+  one place to fix each. None of them has a runtime dependency of its own.
+
+### Fixed
+
+- An entry in `OSM_ALLOW_TOOLS` that is not tool-name-shaped is now
+  **redacted** in the error rather than quoted back. a value pasted into the
+  wrong variable is no longer echoed into the client's log.
+
 ## [0.2.0] - 2026-08-27
 
 ### Added
