@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
+import { READ_ONLY } from './annotations.js';
 import { formatDistance, haversineMeters } from '../geo.js';
 import { run, untrustedResult } from '../result.js';
 
@@ -38,7 +39,7 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
         to: waypoint,
         language,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ from, to, language }) =>
       run(async () => {
@@ -72,7 +73,7 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
           .describe('Travel mode for the directions link, default foot'),
         language,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ place, from, to, profile, language }) =>
       run(async () => {

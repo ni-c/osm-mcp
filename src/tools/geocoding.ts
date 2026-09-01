@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
+import { READ_ONLY } from './annotations.js';
 import { run, untrustedResult } from '../result.js';
 
 const language = z
@@ -45,7 +46,7 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
             'Restrict to countries: comma-separated ISO 3166-1 alpha-2 codes, e.g. "de,lu" (Nominatim only)'
           ),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ query, provider, limit, language, countrycodes }) =>
       run(async () => {
@@ -76,7 +77,7 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
         longitude: z.number().min(-180).max(180),
         language,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ latitude, longitude, language }) =>
       run(async () => {

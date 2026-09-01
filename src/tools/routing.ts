@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
+import { READ_ONLY } from './annotations.js';
 import { formatDistance, formatDuration, haversineMeters } from '../geo.js';
 import type { OsrmLeg } from '../backends/osrm.js';
 import type { Place } from '../resolve.js';
@@ -63,7 +64,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
           .describe('Include a turn-by-turn step summary, default false'),
         language,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ waypoints, profile, include_steps, language }) =>
       run(async () => {
@@ -116,7 +117,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         profile,
         language,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ origins, destinations, profile, language }) =>
       run(async () => {
@@ -163,7 +164,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
           .describe('Return to the first stop at the end, default true'),
         language,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ stops, profile, roundtrip, language }) =>
       run(async () => {
@@ -207,7 +208,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         kilometers: z.number().min(0.1).max(100).optional(),
         language,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ center, profile, minutes, kilometers, language }) =>
       run(async () => {

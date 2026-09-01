@@ -67,6 +67,42 @@ describe('server', () => {
     expect(names).toEqual([...TOOLS].sort());
   });
 
+  it('declares all four annotation hints on every tool', async () => {
+    // Not a style rule. Two of the four default to a *stronger* claim than
+    // silence suggests: the specification gives destructiveHint and
+    // openWorldHint a default of true, so a tool that omits them announces
+    // itself as destructive and open-world. Leaving them out is a statement,
+    // not an abstention — so every tool states all four.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const hints = [
+      'readOnlyHint',
+      'destructiveHint',
+      'idempotentHint',
+      'openWorldHint',
+    ] as const;
+    for (const tool of tools) {
+      for (const hint of hints) {
+        expect(typeof tool.annotations?.[hint], `${tool.name}.${hint}`).toBe(
+          'boolean'
+        );
+      }
+    }
+  });
+
+  it('is the one server that really is open-world, and says so', async () => {
+    // Everywhere else in this family openWorldHint is false, because those
+    // servers talk to one configured instance. Here it is true and true is
+    // correct — public geocoders and routers over the whole planet. Stated
+    // rather than inherited from the default, so that it reads as a decision.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    for (const tool of tools) {
+      expect(tool.annotations?.openWorldHint, tool.name).toBe(true);
+      expect(tool.annotations?.readOnlyHint, tool.name).toBe(true);
+    }
+  });
+
   it('routes on foot via the routed-foot prefix and formats compactly', async () => {
     const fetchMock = stubFetch(() =>
       jsonResponse({

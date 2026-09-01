@@ -8,6 +8,7 @@ import {
 } from '../geo.js';
 
 import { categoryList, resolveCategory } from '../categories.js';
+import { READ_ONLY } from './annotations.js';
 import type { Deps } from '../deps.js';
 import type { Poi } from '../backends/overpass.js';
 import { run, untrustedResult } from '../result.js';
@@ -118,7 +119,7 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
           .describe('Maximum number of results, default 10'),
         language,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ near, category, radius_m, limit, language }) =>
       run(async () => {
@@ -172,7 +173,7 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
           .string()
           .regex(OSM_ID, 'expected "node/<id>", "way/<id>" or "relation/<id>"'),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ osm_id }) =>
       run(async () => {
@@ -234,7 +235,7 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
           .describe('Venue search radius around the midpoint, default 1500'),
         language,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ locations, profile, venue_category, search_radius_m, language }) =>
       run(async () => {
