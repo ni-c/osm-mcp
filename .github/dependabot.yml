@@ -15,16 +15,41 @@ updates:
           - eslint
           - '@eslint/*'
           - typescript-eslint
+      # The catch-all has to repeat the patterns above as exclude-patterns.
+      # Dependabot documents the first matching group as the winner and does not
+      # behave that way (dependabot-core#9765, #14143): on 2026-08-27 it put
+      # `vitest` in the vitest group and `@vitest/coverage-v8` in this one, and
+      # the resulting half-update leaves a lockfile whose `npm ci` dies with
+      # "Cannot read properties of null (reading 'edgesOut')".
       minor-and-patch:
+        exclude-patterns:
+          - vitest
+          - '@vitest/*'
+          - eslint
+          - '@eslint/*'
+          - typescript-eslint
         update-types:
           - minor
           - patch
+    ignore:
+      # typescript-eslint declares `typescript ">=4.8.4 <6.1.0"` as its peer, so
+      # TypeScript 7 does not install here at all — `npm install` aborts with
+      # ERESOLVE. Offering the major would be a weekly PR that can only be closed.
+      # Revisit when typescript-eslint widens the range.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
 
-  # The docs site has its own manifest and lockfile.
+  # The documentation site has its own manifest so its toolchain never lands in the
+  # runtime image or the test matrix.
   - package-ecosystem: npm
     directory: /docs
     schedule:
       interval: weekly
+    groups:
+      docs:
+        patterns:
+          - '*'
 
   # Exists so the digest-pinned base image gets refreshed at all. Node majors are
   # excluded because Dependabot offers whatever tag is newest, while the runtime
@@ -44,8 +69,12 @@ updates:
     schedule:
       interval: weekly
     groups:
-      # init and analyze are separate dependencies to Dependabot but must always
-      # move together — a version mismatch kills the codeql job.
+      # init and analyze are separate dependencies to Dependabot. Ungrouped,
+      # one of them bumps first and the version mismatch fails the CodeQL job.
       codeql:
         patterns:
           - github/codeql-action*
+      # The docker/* actions are released in lockstep and used in one job.
+      docker:
+        patterns:
+          - docker/*
