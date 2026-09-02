@@ -5,8 +5,17 @@ All eleven are registered unless you say otherwise. `OSM_ALLOW_TOOLS` and
 curated six — see
 [choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
 
-All 11 tools, every one read-only (`readOnlyHint`). Two conventions run through
-the whole set:
+All 11 tools, every one read-only (`readOnlyHint`). Every one declares an
+`outputSchema` and answers with `structuredContent` beside the text block, and
+every one carries `untrusted: true` and `source: "openstreetmap"` as fields of
+that object — there is no exception list, because OpenStreetMap is editable by
+anyone on earth and no tool here answers with anything else.
+
+What this server computes is described exactly; what comes out of OSM is
+described but left open, because the tag namespace has no schema and the SDK
+validates a result against its schema before it goes out.
+
+Two conventions run through the whole set:
 
 - **Every place input is a string** that accepts either a name/address
   (geocoded automatically via Nominatim) or literal coordinates as

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { boundingBox, untrustedFields } from '../output-schema.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
@@ -70,6 +71,29 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         language,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        profile: z.string(),
+        engine: z.enum(['openrouteservice', 'osrm']),
+        waypoints: z
+          .array(z.string())
+          .describe('As the geocoder resolved them.'),
+        distance: z.string().describe('Human-readable, e.g. "12.4 km".'),
+        distance_m: z.number().int(),
+        duration: z.string(),
+        duration_s: z.number().int(),
+        legs: z
+          .array(z.unknown())
+          .optional()
+          .describe('Only for 3+ waypoints.'),
+        steps: z
+          .array(z.object({ instruction: z.string(), distance: z.string() }))
+          .optional()
+          .describe(
+            'Only with include_steps. Instructions are OSM street names.'
+          ),
+        steps_truncated: z.string().optional(),
+      }),
     },
     async ({ waypoints, profile, include_steps, language }) =>
       run(async () => {
@@ -123,6 +147,17 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         language,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        profile: z.string(),
+        engine: z.enum(['openrouteservice', 'osrm']),
+        origins: z.array(z.string()),
+        destinations: z.array(z.string()),
+        durations_minutes: z
+          .array(z.array(z.number().nullable()))
+          .describe('Row per origin, column per destination. Null = no route.'),
+        distances_km: z.array(z.array(z.number().nullable())),
+      }),
     },
     async ({ origins, destinations, profile, language }) =>
       run(async () => {
@@ -170,6 +205,22 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         language,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        profile: z.string(),
+        engine: z.literal('osrm').describe('ORS has no equivalent service.'),
+        optimized_order: z.array(z.string()),
+        distance: z.string(),
+        duration: z.string(),
+        legs: z.array(
+          z.object({
+            from: z.string().optional(),
+            to: z.string().optional(),
+            distance: z.string(),
+            duration: z.string(),
+          })
+        ),
+      }),
     },
     async ({ stops, profile, roundtrip, language }) =>
       run(async () => {
@@ -214,6 +265,20 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         language,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        center: z.string(),
+        profile: z.string(),
+        engine: z.enum(['openrouteservice', 'valhalla']),
+        budget: z.string().describe('The one that was given, e.g. "15 min".'),
+        bounding_box: boundingBox,
+        reach: z.object({
+          north: z.string(),
+          south: z.string(),
+          east: z.string(),
+          west: z.string(),
+        }),
+      }),
     },
     async ({ center, profile, minutes, kilometers, language }) =>
       run(async () => {

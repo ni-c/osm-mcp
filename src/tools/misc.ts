@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { untrustedFields } from '../output-schema.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
@@ -40,6 +41,13 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
         language,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        from: z.string(),
+        to: z.string(),
+        distance: z.string().describe('Human-readable, e.g. "12.4 km".'),
+        distance_m: z.number().int(),
+      }),
     },
     async ({ from, to, language }) =>
       run(async () => {
@@ -74,6 +82,19 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
         language,
       }),
       annotations: READ_ONLY,
+      // One shape for both link kinds: `marker` for a single place,
+      // `directions` for a pair. A union of the two would have no object at
+      // its root once it reached a 2025-era client, which is served such a
+      // schema wrapped as `{result: …}`.
+      outputSchema: z.object({
+        ...untrustedFields,
+        place: z.string().optional(),
+        marker: z.string().optional().describe('Only for a single place.'),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        profile: z.enum(['foot', 'car', 'bike']).optional(),
+        directions: z.string().optional().describe('Only for a from/to pair.'),
+      }),
     },
     async ({ place, from, to, profile, language }) =>
       run(async () => {

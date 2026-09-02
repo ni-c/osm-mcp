@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { place, untrustedFields } from '../output-schema.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
@@ -47,6 +48,12 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
           ),
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        provider: z.enum(['nominatim', 'photon']).optional(),
+        note: z.string().optional().describe('Present when nothing matched.'),
+        results: z.array(place),
+      }),
     },
     async ({ query, provider, limit, language, countrycodes }) =>
       run(async () => {
@@ -78,6 +85,11 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
         language,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        result: place.nullable(),
+        note: z.string().optional().describe('Present when nothing was found.'),
+      }),
     },
     async ({ latitude, longitude, language }) =>
       run(async () => {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { poi, untrustedFields } from '../output-schema.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
   formatDistance,
@@ -120,6 +121,14 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
         language,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        near: z.string().describe('The resolved centre, as OSM labels it.'),
+        category: z.string(),
+        count: z.number().int(),
+        note: z.string().optional().describe('Present when nothing was found.'),
+        results: z.array(poi),
+      }),
     },
     async ({ near, category, radius_m, limit, language }) =>
       run(async () => {
@@ -174,6 +183,15 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
           .regex(OSM_ID, 'expected "node/<id>", "way/<id>" or "relation/<id>"'),
       }),
       annotations: READ_ONLY,
+      // Loose, and deliberately: the body of this answer is the element's OSM
+      // tags, and the tag namespace is open — anyone can invent a key. A strict
+      // shape would turn a mapper adding `payment:bitcoin` into a tool that
+      // fails outright, since the SDK validates a result against the schema
+      // before it goes out.
+      outputSchema: poi.extend({
+        ...untrustedFields,
+        map: z.string().optional(),
+      }),
     },
     async ({ osm_id }) =>
       run(async () => {
@@ -236,6 +254,25 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
         language,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        profile: z.enum(['foot', 'car', 'bike']).optional(),
+        note: z
+          .string()
+          .optional()
+          .describe('Present when no venue was found near the midpoint.'),
+        midpoint: z
+          .object({ lat: z.number(), lon: z.number() })
+          .optional()
+          .describe('Only reported when nothing was found near it.'),
+        suggestion: poi.optional(),
+        travel_times: z
+          .array(z.object({ from: z.string(), duration: z.string() }))
+          .optional(),
+        alternatives: z
+          .array(z.object({ name: z.string(), osm: z.string() }))
+          .optional(),
+      }),
     },
     async ({ locations, profile, venue_category, search_radius_m, language }) =>
       run(async () => {

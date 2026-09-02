@@ -152,6 +152,41 @@ publish. More client recipes are in the
 Every place input accepts either a name/address (geocoded automatically) or
 literal coordinates as `"lat,lon"`.
 
+### Structured output
+
+Every tool declares an `outputSchema` and answers with `structuredContent`
+alongside the text block, so a client can use the result without parsing prose:
+
+```jsonc
+{
+  "untrusted": true,
+  "source": "openstreetmap",
+  "profile": "foot",
+  "engine": "osrm",
+  "waypoints": ["Berlin Hauptbahnhof", "Brandenburger Tor"],
+  "distance": "2.3 km",
+  "distance_m": 2317,
+  "duration": "29 min",
+  "duration_s": 1740,
+}
+```
+
+**Every** tool carries `untrusted: true` and `source: "openstreetmap"` — there
+is no exception list, because OpenStreetMap is editable by anyone on earth and
+no tool here answers with anything else. A client that reads only the structured
+half would otherwise get a mapper's free text with no framing at all.
+
+What this server computes — distances, durations, coordinates, which routing
+engine ran — is described exactly. What comes out of OSM is described but left
+open: the tag namespace has no schema, and a mapper adding `payment:bitcoin`
+must not take `poi_details` out of service. The SDK validates every result
+against its schema before it goes out, so a stricter shape would do exactly
+that.
+
+The control-character and BiDi stripping this server has always done to its text
+now runs over the structured value too, key by key. It used to happen on the
+serialized JSON, which reached every string in it for free.
+
 ## Usage policies & attribution
 
 This server talks to shared community infrastructure. It enforces the

@@ -14,6 +14,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every tool declares an `outputSchema` and answers with `structuredContent`
+  beside the text block. A client no longer has to parse prose to use a result.
+
+  All eleven carry `untrusted: true` and `source: "openstreetmap"` as fields —
+  there is no exception list, because OpenStreetMap is editable by anyone on
+  earth and no tool here answers with anything else. A client that reads only
+  the structured half would otherwise get a mapper's free text with no framing
+  at all.
+
+  What this server computes is described exactly; what comes out of OSM is
+  described but left open. The tag namespace has no schema, and the SDK
+  validates every result against the advertised one before it goes out — so a
+  stricter shape would turn a mapper adding `payment:bitcoin` into a
+  `poi_details` that fails outright.
+
+### Fixed
+
+- The control-character and BiDi stripping now runs over the structured value
+  as well, key by key. It used to happen on the serialized JSON, which reached
+  every string in it for free; a value handed over as `structuredContent` is
+  not text, so the same pass has to walk the tree. Without it the two channels
+  of one answer would have differed in exactly the characters this server
+  strips on purpose, and the machine-readable one would have been the dirty
+  half.
+
 ### Changed
 
 - Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
