@@ -7,6 +7,7 @@
 [![license](https://img.shields.io/npm/l/osm-mcp)](LICENSE)
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fosm--mcp-blue)](https://github.com/ni-c/osm-mcp/pkgs/container/osm-mcp)
 [![docs](https://img.shields.io/badge/docs-osm--mcp.ni--c.de-informational)](https://osm-mcp.ni-c.de)
+[![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
@@ -36,7 +37,7 @@ An OpenRouteService key can be supplied optionally to switch the routing engine.
 
 <img src="https://osm-mcp.ni-c.de/demo.gif" alt="Terminal recording: the server reports eleven tools, geocodes the Porta Nigra in Trier, and returns a walking route with distance and duration" width="800">
 
-## Why another OSM MCP server?
+## What makes it different
 
 - **Correct walking/cycling routes.** The public OSRM demo servers ignore the
   profile segment inside the OSRM URL path and always return **car** routes
@@ -96,13 +97,17 @@ If you run several of these servers at once, [mcp-hub](https://mcp-hub.ni-c.de)
 is the other answer — its `/hub` endpoint replaces every server's tools with six
 meta-tools.
 
-## Install
+## Installation
+
+### Claude Code
 
 ```sh
 claude mcp add osm -- npx -y osm-mcp
 ```
 
-Claude Desktop (`claude_desktop_config.json`):
+### Claude Desktop
+
+`claude_desktop_config.json`:
 
 ```json
 {
@@ -115,7 +120,9 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
-Codex (`~/.codex/config.toml`):
+### Codex
+
+`~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.osm]
@@ -123,7 +130,9 @@ command = "npx"
 args = ["-y", "osm-mcp"]
 ```
 
-Container (multi-arch, with SBOM and build provenance):
+### Docker
+
+Multi-arch, with SBOM and build provenance:
 
 ```sh
 docker run -i --rm ghcr.io/ni-c/osm-mcp
@@ -132,6 +141,36 @@ docker run -i --rm ghcr.io/ni-c/osm-mcp
 `-i` is required — the protocol runs over stdin and stdout. There is no port to
 publish. More client recipes are in the
 [client guide](https://osm-mcp.ni-c.de/guide/clients).
+
+### Through mcp-hub
+
+A client that cannot spawn a local process — ChatGPT connectors, Claude on the web,
+Cursor, LibreChat — reaches osm-mcp through [mcp-hub](https://mcp-hub.ni-c.de): one
+container serves many stdio MCP servers over Streamable HTTP, with an OAuth 2.1 login
+behind a single password and long-lived tokens for the clients that cannot do OAuth. Its
+`/hub` endpoint puts every server behind six meta-tools, so one connector reaches all of
+them without N×tool schemas in the model's context, and it speaks both protocol revisions
+— a question this server asks travels through it to the person at the far end.
+
+Its `/config/mcp.json` uses Claude Code's format, so the entry is the one you already
+have:
+
+```json
+{
+  "mcpServers": {
+    "osm": {
+      "command": "npx",
+      "args": ["-y", "osm-mcp"],
+      "env": { "OSM_ALLOW_TOOLS": "essential" },
+      "denyTools": ["isochrone"]
+    }
+  }
+}
+```
+
+`allowTools` and `denyTools` there are the hub's **own** per-server filter, which is not
+the same thing as `*_ALLOW_TOOLS` in `env` — the difference, and the mistake it invites,
+are in the [client guide](https://osm-mcp.ni-c.de/guide/clients#through-mcp-hub).
 
 ## Tools
 
@@ -206,6 +245,18 @@ usage light and non-commercial:
 For heavy or commercial use, self-host the services and point the
 `*_BASE_URL` variables at your instances.
 
+## Not exposed, on purpose
+
+**No editing.** All eleven tools are read-only against OpenStreetMap; the editing
+API is not wired up at all, so there is no write mode to switch off.
+
+**No rendering and no tracking.** Results are structured data plus links rather
+than images — `map_link` hands you a URL to look at the map yourself — and there
+is no state between calls.
+
+**No offline mode.** Every answer comes from the public OpenStreetMap services,
+under their usage policies.
+
 ## Safety
 
 - All tools are **read-only**; the server never writes to OpenStreetMap.
@@ -216,6 +267,11 @@ For heavy or commercial use, self-host the services and point the
 - Upstream error bodies are truncated and HTML error pages dropped before they
   reach the model context.
 - Redirects are never followed; all requests time out.
+
+## Documentation
+
+The full guide, tool reference and security notes live at
+**[osm-mcp.ni-c.de](https://osm-mcp.ni-c.de)** (source in [`docs/`](docs/)).
 
 ## Development
 
@@ -249,6 +305,13 @@ If the registry step fails, fix it on `main` and dispatch the
 `Publish to MCP Registry` workflow — do **not** re-run the tag job, which would
 check out the old tree.
 
+## Contributing
+
+Issues, discussions and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md). For vulnerabilities please use
+[private reporting](https://github.com/ni-c/osm-mcp/security/advisories/new)
+rather than a public issue; the policy is in [SECURITY.md](SECURITY.md).
+
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) © Willi Thiel
