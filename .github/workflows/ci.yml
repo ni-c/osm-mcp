@@ -32,6 +32,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      # Separate from `build`, which compiles only src/ into dist/. This also
+      # typechecks test/, which vitest transpiles without checking.
+      - run: npm run typecheck
       - run: npm run assets:check
       - run: npm run build
       - run: npm test

@@ -39,6 +39,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "typecheck": "tsc --project tsconfig.test.json",
     "watch": "tsc --watch",
     "lint": "oxlint --deny-warnings && prettier --check .",
     "format": "prettier --write .",
@@ -47,7 +48,7 @@
     "smoke": "node scripts/smoke.mjs",
     "assets": "svg-asset-set",
     "assets:check": "svg-asset-set --check",
-    "prepublishOnly": "npm run lint && npm test && npm run build"
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
