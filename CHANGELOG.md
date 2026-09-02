@@ -31,6 +31,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Control characters and BiDi overrides are stripped from every result.**
+  OpenStreetMap is editable by anyone on earth, and a POI's `name`, Nominatim's
+  `display_name` and the street names inside OSRM turn instructions are whatever
+  a mapper typed. `JSON.stringify` escapes everything below U+0020 and nothing
+  above it, so U+007F, the C1 block — which contains CSI at U+009B — and the
+  BiDi overrides U+202A-U+202E reached the model verbatim. The error path had no
+  JSON encoding at all: an upstream body is concatenated straight into the text
+  block, and none of the default endpoints is run by this project.
+
+  The filter sits in `textResult` and `errorResult`, the two funnels every
+  result passes through, rather than at each field. U+200E and U+200F are
+  deliberately **kept** in data: a right-to-left mark is legitimate in an OSM
+  name and cannot reorder the text around it, so stripping it would corrupt the
+  name of a real place. An upstream error body has no such name to protect and
+  takes the full set, in `sanitizeErrorBody` as well as on the way out.
+
+- **`isochrone` no longer fails with `Maximum call stack size exceeded`.** The
+  bounding box was built with `Math.max(...lats)`, and argument spread puts every
+  element on the call stack: about 125 000 points still work, 150 000 already
+  throw. A 120-minute car isochrone from a Valhalla instance that does not
+  generalize carries several hundred thousand points, well inside the 8 MB
+  response cap — so the tool failed on a perfectly ordinary answer, with a
+  message that told the model nothing and invited it to retry, each retry being
+  another rate-limited upstream request. The box is now folded rather than
+  spread, which makes the response size irrelevant to this path.
+
+  The contour geometry also has an explicit ceiling now, like everything else
+  unbounded here (100 route steps, 60 detail tags, 500 characters per tag value).
+  It is set above what the response cap can carry at realistic coordinate
+  precision, so a legitimate contour still comes back whole, and reaching it is
+  an error naming a smaller budget rather than a silent truncation — a bounding
+  box computed from the first half of a ring would be a wrong answer, which is
+  worse than the error it replaced.
+
 - An entry in `OSM_ALLOW_TOOLS` that is not tool-name-shaped is now
   **redacted** in the error rather than quoted back. a value pasted into the
   wrong variable is no longer echoed into the client's log.

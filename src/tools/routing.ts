@@ -3,7 +3,12 @@ import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
 import { READ_ONLY } from './annotations.js';
-import { formatDistance, formatDuration, haversineMeters } from '../geo.js';
+import {
+  boundingBoxOf,
+  formatDistance,
+  formatDuration,
+  haversineMeters,
+} from '../geo.js';
 import type { OsrmLeg } from '../backends/osrm.js';
 import type { Place } from '../resolve.js';
 import { run, untrustedResult } from '../result.js';
@@ -225,12 +230,10 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         if (!contour || contour.coordinates.length === 0) {
           throw new Error('the isochrone service returned no contour');
         }
-        const lats = contour.coordinates.map((c) => c.lat);
-        const lons = contour.coordinates.map((c) => c.lon);
-        const north = Math.max(...lats);
-        const south = Math.min(...lats);
-        const east = Math.max(...lons);
-        const west = Math.min(...lons);
+        // Folded rather than spread: a contour of a few hundred thousand
+        // points is an ordinary answer here, and `Math.max(...lats)` blows the
+        // call stack somewhere above 125 000 of them.
+        const { north, south, east, west } = boundingBoxOf(contour.coordinates);
         return untrustedResult({
           center: place.label,
           profile,

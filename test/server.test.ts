@@ -366,6 +366,87 @@ describe('secret redaction', () => {
   });
 });
 
+describe('control characters and BiDi overrides', () => {
+  // Written as escapes because they are invisible in a source file.
+  const RLO = '\u202e';
+  const CSI = '\u009b';
+  const DEL = '\u007f';
+  const RLM = '\u200f';
+
+  it('strips them from OpenStreetMap data without touching RTL marks', async () => {
+    /*
+     * OSM is editable by anyone: a mapper can set `name=Caf\u00e9<RLO>...` on a
+     * venue and `find_nearby_pois` hands the tag to the model verbatim.
+     * `JSON.stringify` escapes everything below U+0020 and nothing above it, so
+     * U+007F, the C1 block and U+202A-U+202E travelled straight through.
+     *
+     * U+200F is the domain exception and the reason there are two classes here:
+     * a right-to-left mark is *legitimate* in an OSM name — an Arabic name with
+     * a Latin fragment needs it to render in the intended order — and it cannot
+     * reorder the text around it the way an override can. Stripping it would
+     * corrupt the name of a real place.
+     */
+    stubFetch(() =>
+      jsonResponse({
+        elements: [
+          {
+            type: 'node',
+            id: 1,
+            lat: 49.75,
+            lon: 6.64,
+            tags: {
+              name: `Caf\u00e9${RLO}evil${CSI}[31m${DEL}${RLM} \u0645\u0642\u0647\u0649`,
+              amenity: 'cafe',
+            },
+          },
+        ],
+      })
+    );
+    const client = await connect();
+    const text = firstText(
+      await client.callTool({
+        name: 'find_nearby_pois',
+        arguments: { near: '49.75,6.64', category: 'cafe' },
+      })
+    );
+    for (const unsafe of [RLO, CSI, DEL]) {
+      expect(text).not.toContain(unsafe);
+    }
+    expect(text).toContain('Caf\u00e9');
+    expect(text).toContain(RLM);
+  });
+
+  it('strips them from an upstream error body', async () => {
+    /*
+     * The sharper of the two paths: an error body is concatenated into the text
+     * block with no JSON encoding anywhere, so an ANSI escape here is an ANSI
+     * escape in whatever renders the result. None of these endpoints is run by
+     * this project — the default OVERPASS_BASE_URL is a community mirror — and
+     * the body is entirely theirs to choose.
+     */
+    stubFetch(
+      () =>
+        new Response(`routing engine says: ${CSI}[2J${RLO}denied${DEL}`, {
+          status: 500,
+        })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'route',
+      arguments: {
+        waypoints: ['49.7596,6.6439', '49.6116,6.1319'],
+        profile: 'car',
+      },
+    });
+    expect(result.isError).toBe(true);
+    const text = firstText(result);
+    for (const unsafe of [RLO, CSI, DEL]) {
+      expect(text).not.toContain(unsafe);
+    }
+    expect(text).toContain('routing engine says:');
+  });
+});
+
 describe('schema strip invariant', () => {
   it('drops unknown caller-supplied fields before anything reaches upstream', async () => {
     const fetchMock = stubFetch(() => jsonResponse({ elements: [] }));

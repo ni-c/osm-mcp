@@ -1,6 +1,6 @@
 import type { Config } from '../config.js';
 import { HttpClient, RateLimiter } from '../http.js';
-import type { LatLon } from '../geo.js';
+import { flattenCoordinates, type LatLon } from '../geo.js';
 import type { Profile } from './osrm.js';
 
 const COSTING: Record<Profile, string> = {
@@ -61,23 +61,4 @@ export class ValhallaBackend {
         coordinates: flattenCoordinates(f.geometry!.coordinates),
       }));
   }
-}
-
-/** Valhalla returns LineString or MultiPolygon rings; flatten either shape. */
-function flattenCoordinates(coordinates: unknown): LatLon[] {
-  const points: LatLon[] = [];
-  const walk = (node: unknown): void => {
-    if (!Array.isArray(node)) return;
-    if (
-      node.length >= 2 &&
-      typeof node[0] === 'number' &&
-      typeof node[1] === 'number'
-    ) {
-      points.push({ lon: node[0], lat: node[1] });
-      return;
-    }
-    for (const child of node) walk(child);
-  };
-  walk(coordinates);
-  return points;
 }
