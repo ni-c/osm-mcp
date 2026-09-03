@@ -82,6 +82,15 @@ jobs:
   container-scan:
     needs: test
     runs-on: ubuntu-latest
+    # A container CVE used to be visible only as a red job: Trivy fails the build
+    # and uploads nothing, so nothing reaches the Security tab or the API, and a
+    # finding existed only for as long as someone was reading CI logs. The scan
+    # now also reports its results as code scanning alerts — which close
+    # themselves again once a later scan no longer sees them.
+    permissions:
+      # A job-level block replaces the workflow default, so contents is repeated.
+      contents: read
+      security-events: write
     strategy:
       matrix:
         include:
@@ -103,15 +112,55 @@ jobs:
           tags: 'osm-mcp:audit-${{ matrix.tag }}'
           cache-from: type=gha,scope=scan-${{ matrix.tag }}
           cache-to: type=gha,mode=max,scope=scan-${{ matrix.tag }}
+      # Report first, gate second. This step never fails, so the SARIF is uploaded
+      # before the gate below can turn the job red — no `if: always()` needed, which
+      # would try to upload a file a crashed scan never wrote.
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           # Pin Trivy itself: the action's default has been a release that was
           # withdrawn upstream, and the installer then dies after "found version".
           version: v0.74.0
           image-ref: 'osm-mcp:audit-${{ matrix.tag }}'
+          format: sarif
+          output: trivy-${{ matrix.tag }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          # Without this the SARIF ignores `severity` and reports every level,
+          # so the Security tab would fill with LOW noise the gate never blocks on.
+          limit-severities-for-sarif: true
+
+      # Skipped while the repository is private — code scanning needs GitHub
+      # Advanced Security, which the Free plan does not include, and the upload
+      # would fail with "Resource not accessible by integration". Same gate as the
+      # codeql job, and it starts working by itself the day the repo goes public.
+      # Fork pull requests are excluded for a different reason: their token is
+      # read-only whatever this permissions block says.
+      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        # Every continuation line sits at the same indentation on purpose: a folded
+        # scalar keeps the newline of a *more* indented line, and the expression
+        # parser then rejects the workflow without naming a line.
+        if: >-
+          ${{ !github.event.repository.private &&
+          (github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository) }}
+        with:
+          sarif_file: trivy-${{ matrix.tag }}.sarif
+          # One category per matrix leg. Two uploads sharing a category replace
+          # each other, and one architecture's findings would vanish silently.
+          category: trivy-${{ matrix.tag }}
+
+      # The gate, unchanged in behaviour. It runs a second time rather than adding
+      # exit-code to the step above, because SARIF is not readable output: a red
+      # job would otherwise name no CVE in its log at all. Trivy and its database
+      # are already on disk here, so this costs seconds.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          image-ref: 'osm-mcp:audit-${{ matrix.tag }}'
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+          skip-setup-trivy: true
 
   smoke:
     # The weekly run only. This is the integration test of a server whose
