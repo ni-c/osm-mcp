@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
-## [Unreleased]
+## [0.3.0] - 2026-09-03
 
 ### Added
 
@@ -30,16 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validates every result against the advertised one before it goes out — so a
   stricter shape would turn a mapper adding `payment:bitcoin` into a
   `poi_details` that fails outright.
-
-### Fixed
-
-- The control-character and BiDi stripping now runs over the structured value
-  as well, key by key. It used to happen on the serialized JSON, which reached
-  every string in it for free; a value handed over as `structuredContent` is
-  not text, so the same pass has to walk the tree. Without it the two channels
-  of one answer would have differed in exactly the characters this server
-  strips on purpose, and the machine-readable one would have been the dirty
-  half.
 
 ### Changed
 
@@ -74,6 +64,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StdioServerTransport` served it.
 
 ### Fixed
+
+- The control-character and BiDi stripping now runs over the structured value
+  as well, key by key. It used to happen on the serialized JSON, which reached
+  every string in it for free; a value handed over as `structuredContent` is
+  not text, so the same pass has to walk the tree. Without it the two channels
+  of one answer would have differed in exactly the characters this server
+  strips on purpose, and the machine-readable one would have been the dirty
+  half.
 
 - **Control characters and BiDi overrides are stripped from every result.**
   OpenStreetMap is editable by anyone on earth, and a POI's `name`, Nominatim's
