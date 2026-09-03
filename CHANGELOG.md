@@ -43,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The advertised schemas avoid spellings that are legal JSON Schema and still
+  get a tool refused, or its constraint silently dropped, by some MCP clients:
+  an open object now writes `"additionalProperties": true` rather than the
+  empty schema `{}` zod emits for it; a value that was left untyped is declared
+  as what it really is; and a nullable field is written as `anyOf` branches
+  rather than `"type": ["string", "null"]`, which several clients read as a
+  single type and then drop. What the tools accept and return is unchanged;
+  only the way the schema says so is.
+
 - Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
   always did; the change is the package layout behind it.
 

@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { boundingBox, untrustedFields } from '../output-schema.js';
+import {
+  boundingBox,
+  routeLeg,
+  untrustedFields,
+  type RouteLeg,
+} from '../output-schema.js';
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
@@ -36,7 +41,7 @@ const MAX_MATRIX_LOCATIONS = 25;
 /** Response budget: a continental route has tens of thousands of steps. */
 const MAX_STEPS = 100;
 
-function legSummaries(places: Place[], legs: OsrmLeg[]): unknown[] {
+function legSummaries(places: Place[], legs: OsrmLeg[]): RouteLeg[] {
   return legs.map((leg, i) => ({
     from: places[i]?.label,
     to: places[i + 1]?.label,
@@ -82,10 +87,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         distance_m: z.number().int(),
         duration: z.string(),
         duration_s: z.number().int(),
-        legs: z
-          .array(z.unknown())
-          .optional()
-          .describe('Only for 3+ waypoints.'),
+        legs: z.array(routeLeg).optional().describe('Only for 3+ waypoints.'),
         steps: z
           .array(z.object({ instruction: z.string(), distance: z.string() }))
           .optional()
@@ -154,9 +156,23 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         origins: z.array(z.string()),
         destinations: z.array(z.string()),
         durations_minutes: z
-          .array(z.array(z.number().nullable()))
+          .array(
+            z.array(
+              z
+                .number()
+                .describe('Minutes, null when there is no route.')
+                .nullable()
+            )
+          )
           .describe('Row per origin, column per destination. Null = no route.'),
-        distances_km: z.array(z.array(z.number().nullable())),
+        distances_km: z.array(
+          z.array(
+            z
+              .number()
+              .describe('Kilometres, null when there is no route.')
+              .nullable()
+          )
+        ),
       }),
     },
     async ({ origins, destinations, profile, language }) =>
@@ -212,14 +228,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         optimized_order: z.array(z.string()),
         distance: z.string(),
         duration: z.string(),
-        legs: z.array(
-          z.object({
-            from: z.string().optional(),
-            to: z.string().optional(),
-            distance: z.string(),
-            duration: z.string(),
-          })
-        ),
+        legs: z.array(routeLeg),
       }),
     },
     async ({ stops, profile, roundtrip, language }) =>

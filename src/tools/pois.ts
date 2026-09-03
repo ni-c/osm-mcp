@@ -188,10 +188,15 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
       // shape would turn a mapper adding `payment:bitcoin` into a tool that
       // fails outright, since the SDK validates a result against the schema
       // before it goes out.
-      outputSchema: poi.extend({
-        ...untrustedFields,
-        map: z.string().optional(),
-      }),
+      // The `meta` again: `extend` builds a new schema and does not carry the
+      // parent's metadata over, so without it this one goes back to spelling
+      // `additionalProperties` as `{}`.
+      outputSchema: poi
+        .extend({
+          ...untrustedFields,
+          map: z.string().optional(),
+        })
+        .meta({ additionalProperties: true }),
     },
     async ({ osm_id }) =>
       run(async () => {
