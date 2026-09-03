@@ -2,11 +2,12 @@
  * The tools this server can register, declared rather than discovered.
  *
  * Declared, because the tool filter has to answer "is this a name you have?"
- * *before* anything is registered — and in read-only mode the write tools are
- * never registered at all. Deriving the catalogue from what actually reached
- * `registerTool` would make `OSM_ALLOW_TOOLS=get_thing` report
- * "unknown tool" under `OSM_READ_ONLY=true`, which is the one answer that
- * is wrong.
+ * *before* the first tool is registered. `createServer` builds the filter on the
+ * way in, so that an unusable `OSM_ALLOW_TOOLS` fails at startup rather than
+ * leaving a server running with tools quietly missing — and a catalogue derived
+ * from what actually reached `registerTool` would still be empty at that point.
+ * These names are also the half of the error that says which ones do exist, and
+ * what the `essential` preset resolves against.
  *
  * This is also the full tool surface, hard-coded on purpose: a tool that appears
  * or disappears by accident is a change to the server's contract and has to be a

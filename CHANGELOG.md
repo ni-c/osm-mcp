@@ -12,6 +12,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Added
+
+- Every tool declares an `outputSchema` and answers with `structuredContent`
+  beside the text block. A client no longer has to parse prose to use a result.
+
+  All eleven carry `untrusted: true` and `source: "openstreetmap"` as fields —
+  there is no exception list, because OpenStreetMap is editable by anyone on
+  earth and no tool here answers with anything else. A client that reads only
+  the structured half would otherwise get a mapper's free text with no framing
+  at all.
+
+  What this server computes is described exactly; what comes out of OSM is
+  described but left open. The tag namespace has no schema, and the SDK
+  validates every result against the advertised one before it goes out — so a
+  stricter shape would turn a mapper adding `payment:bitcoin` into a
+  `poi_details` that fails outright.
+
+### Fixed
+
+- The control-character and BiDi stripping now runs over the structured value
+  as well, key by key. It used to happen on the serialized JSON, which reached
+  every string in it for free; a value handed over as `structuredContent` is
+  not text, so the same pass has to walk the tree. Without it the two channels
+  of one answer would have differed in exactly the characters this server
+  strips on purpose, and the machine-readable one would have been the dirty
+  half.
+
+### Changed
+
+- The advertised schemas avoid spellings that are legal JSON Schema and still
+  get a tool refused, or its constraint silently dropped, by some MCP clients:
+  an open object now writes `"additionalProperties": true` rather than the
+  empty schema `{}` zod emits for it; a value that was left untyped is declared
+  as what it really is; and a nullable field is written as `anyOf` branches
+  rather than `"type": ["string", "null"]`, which several clients read as a
+  single type and then drop. What the tools accept and return is unchanged;
+  only the way the schema says so is.
+
+- Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
+  always did; the change is the package layout behind it.
+
+- The linter is **oxlint** instead of eslint plus typescript-eslint, which
+  lifts the TypeScript ceiling: typescript-eslint pins `typescript` below 6.1,
+  so this repository was held on TypeScript 6 by its linter rather than by its
+  code.
+
+- The tool filter, the host classifier and the documentation-asset generator
+  now come from **`mcp-tool-allowlist`**, **`mcp-internal-hosts`** and
+  **`svg-asset-set`** rather than from copies kept here — 674 fewer lines, and
+  one place to fix each. None of them has a runtime dependency of its own.
+
+- stdio is served through `serveStdio`, so the connection's era is negotiated
+  on the opening exchange rather than assumed. A client that pins the
+  `2026-07-28` era is served it; until now its `server/discover` probe was
+  answered with "Method not found" and only `2025-11-25` was on offer. A client
+  that speaks the older era sees no change — it is still pinned to one instance
+  for the life of the connection, exactly as a hand-wired
+  `StdioServerTransport` served it.
+
+### Fixed
+
+- **Control characters and BiDi overrides are stripped from every result.**
+  OpenStreetMap is editable by anyone on earth, and a POI's `name`, Nominatim's
+  `display_name` and the street names inside OSRM turn instructions are whatever
+  a mapper typed. `JSON.stringify` escapes everything below U+0020 and nothing
+  above it, so U+007F, the C1 block — which contains CSI at U+009B — and the
+  BiDi overrides U+202A-U+202E reached the model verbatim. The error path had no
+  JSON encoding at all: an upstream body is concatenated straight into the text
+  block, and none of the default endpoints is run by this project.
+
+  The filter sits in `textResult` and `errorResult`, the two funnels every
+  result passes through, rather than at each field. U+200E and U+200F are
+  deliberately **kept** in data: a right-to-left mark is legitimate in an OSM
+  name and cannot reorder the text around it, so stripping it would corrupt the
+  name of a real place. An upstream error body has no such name to protect and
+  takes the full set, in `sanitizeErrorBody` as well as on the way out.
+
+- **`isochrone` no longer fails with `Maximum call stack size exceeded`.** The
+  bounding box was built with `Math.max(...lats)`, and argument spread puts every
+  element on the call stack: about 125 000 points still work, 150 000 already
+  throw. A 120-minute car isochrone from a Valhalla instance that does not
+  generalize carries several hundred thousand points, well inside the 8 MB
+  response cap — so the tool failed on a perfectly ordinary answer, with a
+  message that told the model nothing and invited it to retry, each retry being
+  another rate-limited upstream request. The box is now folded rather than
+  spread, which makes the response size irrelevant to this path.
+
+  The contour geometry also has an explicit ceiling now, like everything else
+  unbounded here (100 route steps, 60 detail tags, 500 characters per tag value).
+  It is set above what the response cap can carry at realistic coordinate
+  precision, so a legitimate contour still comes back whole, and reaching it is
+  an error naming a smaller budget rather than a silent truncation — a bounding
+  box computed from the first half of a ring would be a wrong answer, which is
+  worse than the error it replaced.
+
+- An entry in `OSM_ALLOW_TOOLS` that is not tool-name-shaped is now
+  **redacted** in the error rather than quoted back. a value pasted into the
+  wrong variable is no longer echoed into the client's log.
+
 ## [0.2.0] - 2026-08-27
 
 ### Added

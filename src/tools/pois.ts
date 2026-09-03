@@ -1,15 +1,16 @@
 import { z } from 'zod';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import { categoryList, resolveCategory } from '../categories.js';
-import type { Deps } from '../deps.js';
+import { poi, untrustedFields } from '../output-schema.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import {
   formatDistance,
   formatDuration,
   haversineMeters,
   roundCoord,
 } from '../geo.js';
+
+import { categoryList, resolveCategory } from '../categories.js';
+import { READ_ONLY } from './annotations.js';
+import type { Deps } from '../deps.js';
 import type { Poi } from '../backends/overpass.js';
 import { run, untrustedResult } from '../result.js';
 
@@ -96,7 +97,7 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
         `Category shortcuts: ${categoryList()}. ` +
         'Any other OSM tag works as "key" or "key=value" (e.g. "diet:vegan=yes"). ' +
         'Use poi_details for the full record of one result.',
-      inputSchema: {
+      inputSchema: z.object({
         near: waypoint,
         category: z
           .string()
@@ -118,8 +119,16 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
           .optional()
           .describe('Maximum number of results, default 10'),
         language,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        near: z.string().describe('The resolved centre, as OSM labels it.'),
+        category: z.string(),
+        count: z.number().int(),
+        note: z.string().optional().describe('Present when nothing was found.'),
+        results: z.array(poi),
+      }),
     },
     async ({ near, category, radius_m, limit, language }) =>
       run(async () => {
@@ -168,12 +177,26 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
         '(opening hours, website, phone, …), coordinates and a map link. ' +
         'Takes an OSM id as returned by find_nearby_pois or geocode, ' +
         'e.g. "node/240109189".',
-      inputSchema: {
+      inputSchema: z.object({
         osm_id: z
           .string()
           .regex(OSM_ID, 'expected "node/<id>", "way/<id>" or "relation/<id>"'),
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      // Loose, and deliberately: the body of this answer is the element's OSM
+      // tags, and the tag namespace is open — anyone can invent a key. A strict
+      // shape would turn a mapper adding `payment:bitcoin` into a tool that
+      // fails outright, since the SDK validates a result against the schema
+      // before it goes out.
+      // The `meta` again: `extend` builds a new schema and does not carry the
+      // parent's metadata over, so without it this one goes back to spelling
+      // `additionalProperties` as `{}`.
+      outputSchema: poi
+        .extend({
+          ...untrustedFields,
+          map: z.string().optional(),
+        })
+        .meta({ additionalProperties: true }),
     },
     async ({ osm_id }) =>
       run(async () => {
@@ -210,7 +233,7 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
         'Suggests a fair place to meet for people starting from different ' +
         'locations: finds venues around the geographic midpoint and picks the ' +
         'one with the most balanced travel times for everyone.',
-      inputSchema: {
+      inputSchema: z.object({
         locations: z
           .array(waypoint)
           .min(2)
@@ -234,8 +257,27 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
           .optional()
           .describe('Venue search radius around the midpoint, default 1500'),
         language,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        profile: z.enum(['foot', 'car', 'bike']).optional(),
+        note: z
+          .string()
+          .optional()
+          .describe('Present when no venue was found near the midpoint.'),
+        midpoint: z
+          .object({ lat: z.number(), lon: z.number() })
+          .optional()
+          .describe('Only reported when nothing was found near it.'),
+        suggestion: poi.optional(),
+        travel_times: z
+          .array(z.object({ from: z.string(), duration: z.string() }))
+          .optional(),
+        alternatives: z
+          .array(z.object({ name: z.string(), osm: z.string() }))
+          .optional(),
+      }),
     },
     async ({ locations, profile, venue_category, search_radius_m, language }) =>
       run(async () => {

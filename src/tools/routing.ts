@@ -1,9 +1,20 @@
 import { z } from 'zod';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import {
+  boundingBox,
+  routeLeg,
+  untrustedFields,
+  type RouteLeg,
+} from '../output-schema.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
-import { formatDistance, formatDuration, haversineMeters } from '../geo.js';
+import { READ_ONLY } from './annotations.js';
+import {
+  boundingBoxOf,
+  formatDistance,
+  formatDuration,
+  haversineMeters,
+} from '../geo.js';
 import type { OsrmLeg } from '../backends/osrm.js';
 import type { Place } from '../resolve.js';
 import { run, untrustedResult } from '../result.js';
@@ -30,7 +41,7 @@ const MAX_MATRIX_LOCATIONS = 25;
 /** Response budget: a continental route has tens of thousands of steps. */
 const MAX_STEPS = 100;
 
-function legSummaries(places: Place[], legs: OsrmLeg[]): unknown[] {
+function legSummaries(places: Place[], legs: OsrmLeg[]): RouteLeg[] {
   return legs.map((leg, i) => ({
     from: places[i]?.label,
     to: places[i + 1]?.label,
@@ -51,7 +62,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         'are visited in the given order. Set include_steps for a turn-by-turn ' +
         'summary. Use route_matrix to compare many pairs, optimize_route to ' +
         'reorder stops.',
-      inputSchema: {
+      inputSchema: z.object({
         waypoints: z
           .array(waypoint)
           .min(2)
@@ -63,8 +74,28 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
           .optional()
           .describe('Include a turn-by-turn step summary, default false'),
         language,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        profile: z.string(),
+        engine: z.enum(['openrouteservice', 'osrm']),
+        waypoints: z
+          .array(z.string())
+          .describe('As the geocoder resolved them.'),
+        distance: z.string().describe('Human-readable, e.g. "12.4 km".'),
+        distance_m: z.number().int(),
+        duration: z.string(),
+        duration_s: z.number().int(),
+        legs: z.array(routeLeg).optional().describe('Only for 3+ waypoints.'),
+        steps: z
+          .array(z.object({ instruction: z.string(), distance: z.string() }))
+          .optional()
+          .describe(
+            'Only with include_steps. Instructions are OSM street names.'
+          ),
+        steps_truncated: z.string().optional(),
+      }),
     },
     async ({ waypoints, profile, include_steps, language }) =>
       run(async () => {
@@ -111,13 +142,38 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         'Computes travel times and distances from every origin to every ' +
         'destination in one call — ideal for comparing options (e.g. 5 hotels ' +
         'against 3 sights). Cells are null where no route exists.',
-      inputSchema: {
+      inputSchema: z.object({
         origins: z.array(waypoint).min(1).max(12),
         destinations: z.array(waypoint).min(1).max(12),
         profile,
         language,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        profile: z.string(),
+        engine: z.enum(['openrouteservice', 'osrm']),
+        origins: z.array(z.string()),
+        destinations: z.array(z.string()),
+        durations_minutes: z
+          .array(
+            z.array(
+              z
+                .number()
+                .describe('Minutes, null when there is no route.')
+                .nullable()
+            )
+          )
+          .describe('Row per origin, column per destination. Null = no route.'),
+        distances_km: z.array(
+          z.array(
+            z
+              .number()
+              .describe('Kilometres, null when there is no route.')
+              .nullable()
+          )
+        ),
+      }),
     },
     async ({ origins, destinations, profile, language }) =>
       run(async () => {
@@ -155,7 +211,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         'optimization) and returns the optimized itinerary with total distance ' +
         'and time. With roundtrip (default) the tour returns to the first stop; ' +
         'without it the first stop is the start and the last stop the end.',
-      inputSchema: {
+      inputSchema: z.object({
         stops: z.array(waypoint).min(3).max(12),
         profile,
         roundtrip: z
@@ -163,8 +219,17 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
           .optional()
           .describe('Return to the first stop at the end, default true'),
         language,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        profile: z.string(),
+        engine: z.literal('osrm').describe('ORS has no equivalent service.'),
+        optimized_order: z.array(z.string()),
+        distance: z.string(),
+        duration: z.string(),
+        legs: z.array(routeLeg),
+      }),
     },
     async ({ stops, profile, roundtrip, language }) =>
       run(async () => {
@@ -201,14 +266,28 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         'budget ("what is reachable in 15 minutes on foot?"). Returns a compact ' +
         'summary of the reachable area: bounding box and reach per compass ' +
         'direction. Give exactly one of minutes or kilometers.',
-      inputSchema: {
+      inputSchema: z.object({
         center: waypoint,
         profile,
         minutes: z.number().min(1).max(120).optional(),
         kilometers: z.number().min(0.1).max(100).optional(),
         language,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        center: z.string(),
+        profile: z.string(),
+        engine: z.enum(['openrouteservice', 'valhalla']),
+        budget: z.string().describe('The one that was given, e.g. "15 min".'),
+        bounding_box: boundingBox,
+        reach: z.object({
+          north: z.string(),
+          south: z.string(),
+          east: z.string(),
+          west: z.string(),
+        }),
+      }),
     },
     async ({ center, profile, minutes, kilometers, language }) =>
       run(async () => {
@@ -225,12 +304,10 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         if (!contour || contour.coordinates.length === 0) {
           throw new Error('the isochrone service returned no contour');
         }
-        const lats = contour.coordinates.map((c) => c.lat);
-        const lons = contour.coordinates.map((c) => c.lon);
-        const north = Math.max(...lats);
-        const south = Math.min(...lats);
-        const east = Math.max(...lons);
-        const west = Math.min(...lons);
+        // Folded rather than spread: a contour of a few hundred thousand
+        // points is an ordinary answer here, and `Math.max(...lats)` blows the
+        // call stack somewhere above 125 000 of them.
+        const { north, south, east, west } = boundingBoxOf(contour.coordinates);
         return untrustedResult({
           center: place.label,
           profile,

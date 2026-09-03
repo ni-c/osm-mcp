@@ -32,6 +32,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      # Separate from `build`, which compiles only src/ into dist/. This also
+      # typechecks test/, which vitest transpiles without checking.
+      - run: npm run typecheck
       - run: npm run assets:check
       - run: npm run build
       - run: npm test
@@ -110,7 +113,34 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+  smoke:
+    # The weekly run only. This is the integration test of a server whose
+    # backend is somebody else's public infrastructure: Nominatim, OSRM and
+    # Overpass have no self-hosted edition worth putting in a compose file for
+    # a test run, and their usage policies are written for people, not for a
+    # job that fires on every push. So the question it answers is the one the
+    # weekly schedule asks everywhere else in this family — has the backend
+    # moved underneath the server — and it is allowed to fail without blocking
+    # a pull request.
+    if: github.event_name == 'schedule'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The script spawns dist/index.js, not src/.
+      - run: npm run build
+      - run: npm run smoke
+
   publish:
+    # `smoke` is deliberately not in this list, and could not be: it only runs
+    # on the weekly schedule, so on a release tag it is skipped and a skipped
+    # job in `needs:` blocks everything after it. That matches what it is for —
+    # a report that a third party's service changed, not a gate on a release.
     needs: [test, container-scan]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest

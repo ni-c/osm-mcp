@@ -290,14 +290,41 @@ function looksLikeJson(text: string): boolean {
 
 const MAX_ERROR_BODY_LENGTH = 2000;
 
+/*
+ * C0 and C1 controls, DEL, and the BiDi overrides and isolates.
+ *
+ * The error path is the one place in this server where third-party text reaches
+ * the model with no JSON encoding in between — the body is concatenated straight
+ * into the text block — so an ANSI escape here is an ANSI escape in whatever
+ * renders the result. That matters more than it sounds: the default
+ * `OVERPASS_BASE_URL` is a community mirror this project does not run, and an
+ * error body is exactly what a mirror gets to choose.
+ *
+ * Stricter than the class the data path uses, which keeps U+200E and U+200F
+ * because OSM place names need them. An error body has no place name to protect.
+ * Tab, newline and carriage return stay: they are the body's own formatting.
+ */
+const UNSAFE_CHARS =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
 /**
  * Limits what an upstream error body can inject into the model context: HTML
- * error pages are dropped entirely, other bodies are truncated. Bodies often
- * echo the request line, so URL-style key parameters are redacted here too.
+ * error pages are dropped entirely, control characters are stripped and other
+ * bodies are truncated. Bodies often echo the request line, so URL-style key
+ * parameters are redacted here too.
+ *
+ * The strip is repeated in `errorResult`, which is the funnel every error text
+ * passes through. Both, deliberately: this function promises a body that is safe
+ * to concatenate, and a promise that only holds because of what the caller does
+ * afterwards is not one.
  */
 export function sanitizeErrorBody(body: string): string {
-  const trimmed = redactUrl(body.trim());
-  if (/^(<!doctype\s|<html[\s>])/i.test(trimmed)) {
+  const trimmed = redactUrl(body.replace(UNSAFE_CHARS, '').trim());
+  // Anything markup-shaped: a reverse proxy's error page or a WAF block page.
+  // The check is deliberately loose — an XML declaration, a leading comment or
+  // a doctype followed by a newline are all the same thing here.
+  if (/^(<!doctype|<html[\s>]|<\?xml|<!--)/i.test(trimmed)) {
     return '(HTML error page omitted)';
   }
   if (trimmed.length > MAX_ERROR_BODY_LENGTH) {

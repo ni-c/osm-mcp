@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 // Live smoke test against the real public OSM services — run on demand with
-// `npm run smoke`, never in CI: it exercises third-party infrastructure and
-// its results depend on live map data. Requires a prior `npm run build`.
+// `npm run smoke`, and never in the pull-request gate: it exercises
+// third-party infrastructure that nobody here pays for, and its results depend
+// on live map data, so a pull request could go red because somebody edited a
+// building. CI runs it on the weekly schedule only, where a failure is a
+// report that something moved rather than a block on anybody's work.
+// Requires a prior `npm run build`.
 //
 // The foot-vs-car check at the end is the guard against the classic OSRM demo
 // pitfall: with the wrong URL layout the server silently returns car routes
 // for every profile, and walking times come out impossibly fast.
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { Client } from '@modelcontextprotocol/client';
 
 const serverPath = new URL('../dist/index.js', import.meta.url).pathname;
 const client = new Client({ name: 'smoke', version: '0.0.0' });

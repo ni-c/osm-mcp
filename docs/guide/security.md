@@ -10,9 +10,23 @@ queries travel to public services.
 ## Trust model
 
 This server holds **no credentials by default** — it talks to public, read-only
-OpenStreetMap services. All 11 tools are read-only and carry the MCP
-`readOnlyHint` annotation; the server cannot modify OpenStreetMap data, because
-the editing API is simply not wired up. There is no write mode to switch off.
+OpenStreetMap services. All 11 tools are read-only; the server cannot modify
+OpenStreetMap data, because the editing API is simply not wired up. There is no
+write mode to switch off.
+
+Every tool declares all four MCP annotations rather than leaving three to the
+defaults: `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`
+and — uniquely in this family — **`openWorldHint: true`**. The specification's own
+example draws that line where this server sits: a tool whose world is one
+configured instance is closed, and one that queries public services on the open
+internet is not. Every other server in this family is `false` throughout; this is
+the one where `true` is the honest answer.
+
+There is no approval dialog and no `ELICITATION` variable here, because there is
+nothing to ask about: no tool of this server changes anything, anywhere. The
+servers that do have one — see, for instance,
+[imap-mcp's](https://imap-mcp.ni-c.de/guide/approval) — and a variable that did
+nothing would be worse than none at all.
 
 The only optional secret is `ORS_API_KEY`, an OpenRouteService key.
 Compromising it lets an attacker consume the key owner's free-tier request

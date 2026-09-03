@@ -1,6 +1,6 @@
 import type { Config } from '../config.js';
 import { HttpClient, RateLimiter } from '../http.js';
-import type { LatLon } from '../geo.js';
+import { flattenCoordinates, type LatLon } from '../geo.js';
 import type { OsrmMatrix, OsrmRoute, Profile } from './osrm.js';
 import type { IsochroneContour } from './valhalla.js';
 
@@ -134,25 +134,7 @@ export class OrsBackend {
         value: isTime
           ? (f.properties?.value ?? 0) / 60
           : (f.properties?.value ?? 0) / 1000,
-        coordinates: flatten(f.geometry!.coordinates),
+        coordinates: flattenCoordinates(f.geometry!.coordinates),
       }));
   }
-}
-
-function flatten(coordinates: unknown): LatLon[] {
-  const points: LatLon[] = [];
-  const walk = (node: unknown): void => {
-    if (!Array.isArray(node)) return;
-    if (
-      node.length >= 2 &&
-      typeof node[0] === 'number' &&
-      typeof node[1] === 'number'
-    ) {
-      points.push({ lon: node[0], lat: node[1] });
-      return;
-    }
-    for (const child of node) walk(child);
-  };
-  walk(coordinates);
-  return points;
 }

@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 
 import { loadConfig } from '../src/config.js';
 import { run } from '../src/result.js';
@@ -67,6 +65,76 @@ describe('server', () => {
     const client = await connect();
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([...TOOLS].sort());
+  });
+
+  it('declares an output schema on every tool', async () => {
+    // The same argument as the annotations below, one field along. A tool that
+    // says nothing about its result forces a client to parse prose to find out
+    // what it got, and the SDK sends no `structuredContent` at all for a tool
+    // that declared no schema.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) {
+      expect(tool.outputSchema, tool.name).toBeDefined();
+      // An object root, not merely a schema. SEP-2106 allows an array or a
+      // scalar, but a 2025-era client is served that same tool with the schema
+      // rewritten to `{result: …}` — so it would answer in two shapes
+      // depending on who asked.
+      expect(tool.outputSchema?.type, tool.name).toBe('object');
+    }
+  });
+
+  it('marks every result as untrusted, because all of it is', async () => {
+    // OpenStreetMap is editable by anyone on earth. There is no tool here that
+    // answers with anything else, so the list of exceptions is empty — and
+    // saying so is what keeps the next tool from being the first one to forget.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const plain = tools
+      .filter((tool) => {
+        const properties = tool.outputSchema?.properties as
+          Record<string, unknown> | undefined;
+        return properties?.untrusted === undefined;
+      })
+      .map((tool) => tool.name);
+    expect(plain).toEqual([]);
+  });
+
+  it('declares all four annotation hints on every tool', async () => {
+    // Not a style rule. Two of the four default to a *stronger* claim than
+    // silence suggests: the specification gives destructiveHint and
+    // openWorldHint a default of true, so a tool that omits them announces
+    // itself as destructive and open-world. Leaving them out is a statement,
+    // not an abstention — so every tool states all four.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const hints = [
+      'readOnlyHint',
+      'destructiveHint',
+      'idempotentHint',
+      'openWorldHint',
+    ] as const;
+    for (const tool of tools) {
+      for (const hint of hints) {
+        expect(typeof tool.annotations?.[hint], `${tool.name}.${hint}`).toBe(
+          'boolean'
+        );
+      }
+    }
+  });
+
+  it('is the one server that really is open-world, and says so', async () => {
+    // Everywhere else in this family openWorldHint is false, because those
+    // servers talk to one configured instance. Here it is true and true is
+    // correct — public geocoders and routers over the whole planet. Stated
+    // rather than inherited from the default, so that it reads as a decision.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    for (const tool of tools) {
+      expect(tool.annotations?.openWorldHint, tool.name).toBe(true);
+      expect(tool.annotations?.readOnlyHint, tool.name).toBe(true);
+    }
   });
 
   it('routes on foot via the routed-foot prefix and formats compactly', async () => {
@@ -329,6 +397,87 @@ describe('secret redaction', () => {
     const text = firstText(result);
     expect(text).not.toContain(KEY);
     expect(text).toContain('[redacted]');
+  });
+});
+
+describe('control characters and BiDi overrides', () => {
+  // Written as escapes because they are invisible in a source file.
+  const RLO = '\u202e';
+  const CSI = '\u009b';
+  const DEL = '\u007f';
+  const RLM = '\u200f';
+
+  it('strips them from OpenStreetMap data without touching RTL marks', async () => {
+    /*
+     * OSM is editable by anyone: a mapper can set `name=Caf\u00e9<RLO>...` on a
+     * venue and `find_nearby_pois` hands the tag to the model verbatim.
+     * `JSON.stringify` escapes everything below U+0020 and nothing above it, so
+     * U+007F, the C1 block and U+202A-U+202E travelled straight through.
+     *
+     * U+200F is the domain exception and the reason there are two classes here:
+     * a right-to-left mark is *legitimate* in an OSM name — an Arabic name with
+     * a Latin fragment needs it to render in the intended order — and it cannot
+     * reorder the text around it the way an override can. Stripping it would
+     * corrupt the name of a real place.
+     */
+    stubFetch(() =>
+      jsonResponse({
+        elements: [
+          {
+            type: 'node',
+            id: 1,
+            lat: 49.75,
+            lon: 6.64,
+            tags: {
+              name: `Caf\u00e9${RLO}evil${CSI}[31m${DEL}${RLM} \u0645\u0642\u0647\u0649`,
+              amenity: 'cafe',
+            },
+          },
+        ],
+      })
+    );
+    const client = await connect();
+    const text = firstText(
+      await client.callTool({
+        name: 'find_nearby_pois',
+        arguments: { near: '49.75,6.64', category: 'cafe' },
+      })
+    );
+    for (const unsafe of [RLO, CSI, DEL]) {
+      expect(text).not.toContain(unsafe);
+    }
+    expect(text).toContain('Caf\u00e9');
+    expect(text).toContain(RLM);
+  });
+
+  it('strips them from an upstream error body', async () => {
+    /*
+     * The sharper of the two paths: an error body is concatenated into the text
+     * block with no JSON encoding anywhere, so an ANSI escape here is an ANSI
+     * escape in whatever renders the result. None of these endpoints is run by
+     * this project — the default OVERPASS_BASE_URL is a community mirror — and
+     * the body is entirely theirs to choose.
+     */
+    stubFetch(
+      () =>
+        new Response(`routing engine says: ${CSI}[2J${RLO}denied${DEL}`, {
+          status: 500,
+        })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'route',
+      arguments: {
+        waypoints: ['49.7596,6.6439', '49.6116,6.1319'],
+        profile: 'car',
+      },
+    });
+    expect(result.isError).toBe(true);
+    const text = firstText(result);
+    for (const unsafe of [RLO, CSI, DEL]) {
+      expect(text).not.toContain(unsafe);
+    }
+    expect(text).toContain('routing engine says:');
   });
 });
 

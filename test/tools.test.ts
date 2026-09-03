@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 
 import { loadConfig } from '../src/config.js';
 import { createServer } from '../src/server.js';
@@ -258,6 +256,41 @@ describe('isochrone', () => {
     expect(data.budget).toBe('15 min');
     expect(data.bounding_box.north).toBe(49.77);
     expect(data.reach.north).toMatch(/km|m/);
+  });
+
+  it('summarizes a contour with more points than an argument list holds', async () => {
+    /*
+     * End to end, because the fold in geo.ts only helps if the tool actually
+     * uses it. 200 000 points is past the ~150 000 argument ceiling of this
+     * runtime and well inside the 8 MB response cap, so it is a shape a
+     * barely-generalizing Valhalla instance really produces.
+     */
+    const coordinates = Array.from({ length: 200_000 }, (_, index) => [
+      6.6 + (index % 1000) / 100_000,
+      49.7 + (index % 997) / 100_000,
+    ]);
+    coordinates.push([6.5, 49.9]);
+    stubFetch(() =>
+      jsonResponse({
+        features: [
+          {
+            properties: { contour: 120 },
+            geometry: { type: 'LineString', coordinates },
+          },
+        ],
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'isochrone',
+      arguments: { center: '49.75,6.64', profile: 'car', minutes: 120 },
+    });
+    expect(result.isError).toBeFalsy();
+    const data = parseJson<{ bounding_box: { north: number; west: number } }>(
+      result
+    );
+    expect(data.bounding_box.north).toBe(49.9);
+    expect(data.bounding_box.west).toBe(6.5);
   });
 
   it('uses ORS isochrones when a key is configured', async () => {

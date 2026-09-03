@@ -1,7 +1,9 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import { buildToolFilter, installToolFilter } from 'mcp-tool-allowlist';
+
+import { ALL_TOOLS, ESSENTIAL_TOOLS } from './tools/catalogue.js';
 
 import { NominatimBackend } from './backends/nominatim.js';
-import { buildToolFilter, installToolFilter } from './tool-filter.js';
 import { OrsBackend } from './backends/ors.js';
 import { OsrmBackend } from './backends/osrm.js';
 import { OverpassBackend } from './backends/overpass.js';
@@ -21,7 +23,19 @@ import { packageVersion } from './version.js';
 export function createServer(config: Config): McpServer {
   // Before anything is built: an unusable tool list should fail on the
   // way in, not leave a server running with tools quietly missing.
-  const filter = buildToolFilter(config);
+  const filter = buildToolFilter({
+    allowTools: config.allowTools,
+    denyTools: config.denyTools,
+    catalogue: {
+      all: ALL_TOOLS,
+      essential: ESSENTIAL_TOOLS,
+    },
+    names: {
+      allow: 'OSM_ALLOW_TOOLS',
+      deny: 'OSM_DENY_TOOLS',
+      server: 'osm-mcp',
+    },
+  });
 
   // Last line of defense: no tool result may ever contain the key verbatim,
   // no matter which upstream echoed it.

@@ -1,8 +1,9 @@
 import { z } from 'zod';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { untrustedFields } from '../output-schema.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { Deps } from '../deps.js';
+import { READ_ONLY } from './annotations.js';
 import { formatDistance, haversineMeters } from '../geo.js';
 import { run, untrustedResult } from '../result.js';
 
@@ -34,12 +35,19 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
         'Great-circle ("as the crow flies") distance between two places. ' +
         'Instant and independent of any road network — use route for real ' +
         'travel distances.',
-      inputSchema: {
+      inputSchema: z.object({
         from: waypoint,
         to: waypoint,
         language,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        from: z.string(),
+        to: z.string(),
+        distance: z.string().describe('Human-readable, e.g. "12.4 km".'),
+        distance_m: z.number().int(),
+      }),
     },
     async ({ from, to, language }) =>
       run(async () => {
@@ -63,7 +71,7 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
         'Generates openstreetmap.org links to open in a browser: a marker link ' +
         'for a single place, or a directions link when from and to are given. ' +
         'Provide either "place", or both "from" and "to".',
-      inputSchema: {
+      inputSchema: z.object({
         place: z.optional(waypoint).describe('Place for a marker link'),
         from: z.optional(waypoint).describe('Start for a directions link'),
         to: z.optional(waypoint).describe('Destination for a directions link'),
@@ -72,8 +80,21 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
           .optional()
           .describe('Travel mode for the directions link, default foot'),
         language,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      // One shape for both link kinds: `marker` for a single place,
+      // `directions` for a pair. A union of the two would have no object at
+      // its root once it reached a 2025-era client, which is served such a
+      // schema wrapped as `{result: …}`.
+      outputSchema: z.object({
+        ...untrustedFields,
+        place: z.string().optional(),
+        marker: z.string().optional().describe('Only for a single place.'),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        profile: z.enum(['foot', 'car', 'bike']).optional(),
+        directions: z.string().optional().describe('Only for a from/to pair.'),
+      }),
     },
     async ({ place, from, to, profile, language }) =>
       run(async () => {

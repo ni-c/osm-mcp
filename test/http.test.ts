@@ -193,6 +193,18 @@ describe('HttpClient', () => {
 });
 
 describe('sanitizeErrorBody', () => {
+  it('drops markup that does not open with a doctype or <html>', () => {
+    // A WAF block page can open with a comment, and an upstream that answers
+    // errors in XML is exactly as useless to the model as one that answers in
+    // HTML. The old check required a doctype or an <html> tag first and let
+    // both of these through.
+    expect(
+      sanitizeErrorBody('<?xml version="1.0"?><error>denied</error>')
+    ).toBe('(HTML error page omitted)');
+    expect(
+      sanitizeErrorBody('<!-- blocked by policy -->\n<html>x</html>')
+    ).toBe('(HTML error page omitted)');
+  });
   it('drops HTML error pages', () => {
     expect(sanitizeErrorBody('<html><body>boom</body></html>')).toBe(
       '(HTML error page omitted)'
@@ -201,6 +213,20 @@ describe('sanitizeErrorBody', () => {
 
   it('truncates long bodies', () => {
     expect(sanitizeErrorBody('x'.repeat(5000))).toMatch(/… \(truncated\)$/);
+  });
+
+  it('strips control characters and BiDi overrides', () => {
+    // This function promises a body that is safe to concatenate into the model
+    // context, and the caller does concatenate it with no JSON encoding in
+    // between. It only ever dropped markup and length; an ANSI escape or a
+    // U+202E went through untouched, from an endpoint this project does not run.
+    const body = sanitizeErrorBody(
+      'denied\u009b[2J\u202ereversed\u007f\u200fmark'
+    );
+    // The escape *introducer* is gone; the `[2J` it would have steered is left
+    // as the ordinary text it now is.
+    expect(body).toBe('denied[2Jreversedmark');
+    expect(body).not.toMatch(/[\u007f-\u009f\u200e\u200f\u202a-\u202e]/);
   });
 });
 
