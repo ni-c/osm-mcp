@@ -1,16 +1,19 @@
 # osm-mcp
 
+<!-- badges: start -->
+
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/osm-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/osm-mcp/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ni-c/osm-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/ni-c/osm-mcp)
+<a href="https://socket.dev/npm/package/osm-mcp"><img src="https://socket.dev/api/badge/npm/package/osm-mcp" alt="Socket supply-chain report" height="20"></a>
+[![Glama score](https://glama.ai/mcp/servers/ni-c/osm-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ni-c/osm-mcp)
+<br>
 [![npm version](https://img.shields.io/npm/v/osm-mcp)](https://www.npmjs.com/package/osm-mcp)
-[![npm downloads](https://img.shields.io/npm/dm/osm-mcp)](https://www.npmjs.com/package/osm-mcp)
-[![node](https://img.shields.io/node/v/osm-mcp)](https://nodejs.org)
-[![license](https://img.shields.io/npm/l/osm-mcp)](LICENSE)
-[![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fosm--mcp-blue)](https://github.com/ni-c/osm-mcp/pkgs/container/osm-mcp)
-[![docs](https://img.shields.io/badge/docs-osm--mcp.ni--c.de-informational)](https://osm-mcp.ni-c.de)
-[![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
-[![Glama](https://glama.ai/mcp/servers/ni-c/osm-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ni-c/osm-mcp)
+[![container image](https://img.shields.io/badge/ghcr.io-ni--c%2Fosm--mcp-4f46e5?logo=docker&logoColor=white)](https://github.com/ni-c/osm-mcp/pkgs/container/osm-mcp)
+[![HTTP via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-4f46e5?logo=modelcontextprotocol&logoColor=white)](https://mcp-hub.ni-c.de)
+<br>
+[![docs](https://img.shields.io/badge/docs-osm--mcp.ni--c.de-4f46e5?logo=readthedocs&logoColor=white)](https://osm-mcp.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
+<!-- badges: end -->
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
 [OpenStreetMap](https://www.openstreetmap.org), built for travel planning.
