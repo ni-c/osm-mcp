@@ -30,6 +30,8 @@ Travel profiles are `"foot"`, `"car"` or `"bike"` throughout.
 
 ### `geocode`
 
+**essential**
+
 Converts a place name or address into coordinates. Returns matching places with
 lat/lon, a display label and the OSM id. Provider `nominatim` (default) is best
 for addresses; `photon` is typo-tolerant and better for fuzzy place names.
@@ -50,6 +52,8 @@ for addresses; `photon` is typo-tolerant and better for fuzzy place names.
 
 ### `reverse_geocode`
 
+**essential**
+
 Converts coordinates into the nearest address or place name (Nominatim).
 
 | Parameter | Type | Required | Description |
@@ -65,6 +69,8 @@ Converts coordinates into the nearest address or place name (Nominatim).
 ## Routing
 
 ### `route`
+
+**essential**
 
 Calculates the real-world travel distance and time between two or more places,
 visited in the given order. Returns a human-readable distance and duration plus
@@ -152,6 +158,8 @@ one** of `minutes` or `kilometers`. Uses Valhalla, or OpenRouteService when
 
 ### `find_nearby_pois`
 
+**essential**
+
 Finds points of interest near a location, sorted by distance (Overpass).
 `category` is either one of ~45 built-in shortcuts — `restaurant`, `cafe`,
 `bar`, `hotel`, `hostel`, `museum`, `attraction`, `viewpoint`, `castle`,
@@ -175,6 +183,8 @@ opening hours, website, phone, wheelchair, …).
 ```
 
 ### `poi_details`
+
+**essential**
 
 Fetches the full OpenStreetMap record of one element — all tags (opening
 hours, website, phone, …), coordinates and a map link. Takes an OSM id as
@@ -229,6 +239,8 @@ offline.
 ```
 
 ### `map_link`
+
+**essential**
 
 Generates openstreetmap.org links to open in a browser: a marker link for a
 single place, or a directions link when `from` and `to` are given (the
