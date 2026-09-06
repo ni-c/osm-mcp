@@ -66,7 +66,7 @@ jobs:
             echo "The '#region changelog' include in CHANGELOG.md is broken." >&2
             exit 1
           fi
-          echo "changelog page carries all $(grep -cE '^## \[' CHANGELOG.md) releases"
+          echo "changelog page carries all $(grep -cE '^## \[[0-9]' CHANGELOG.md) releases"
 
       # Publish without a third-party action: one orphan commit force-pushed to
       # gh-pages keeps the branch a single revision and adds no supply-chain surface.
