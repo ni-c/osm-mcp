@@ -16,7 +16,15 @@ export function haversineMeters(a: LatLon, b: LatLon): number {
   const h =
     sinLat * sinLat +
     Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLon * sinLon;
-  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
+  // atan2 rather than asin(sqrt(h)): asin is infinitely sensitive where its
+  // argument approaches 1, so at antipodal distances the rounding error of
+  // `h` grew to a tenth of a metre out of twenty thousand kilometres — enough
+  // to make a detour through a third point come out *shorter* than the direct
+  // distance, which the triangle-inequality property caught once in a few
+  // thousand runs. atan2 is well-conditioned over the whole range.
+  return (
+    2 * EARTH_RADIUS_M * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h)))
+  );
 }
 
 /**
