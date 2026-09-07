@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `haversineMeters` uses the `atan2` form instead of `asin(sqrt(h))`. `asin`
+  is infinitely sensitive where its argument approaches 1, so at antipodal
+  distances the rounding error grew to a tenth of a metre — enough for the
+  triangle-inequality property test to see a detour that was _shorter_ than
+  the direct distance, once in a few thousand runs, and to turn the release
+  build of 0.3.1 red on its first try. The worst violation over 200 000
+  antipodal triangles is now below a micrometre; distances change by
+  fractions of a metre and are rounded before they are shown.
+
 [Unreleased]: https://github.com/ni-c/osm-mcp/compare/v0.3.1...HEAD
 
 ## [0.3.1] - 2026-09-07
