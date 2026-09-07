@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- oxlint's `suspicious` category is on; 34 findings fixed (mostly
+  `Array#toSorted()` over copy-and-sort and un-shadowed names). No runtime
+  behaviour changed.
 - The tool reference marks the `essential` preset and the tools that ask a
   person before they act, per tool rather than only in the introduction. A test
   keeps both sets in step with the code.

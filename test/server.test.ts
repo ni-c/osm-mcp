@@ -97,8 +97,10 @@ describe('server', () => {
 
   it('registers all eleven tools with an empty environment', async () => {
     const client = await connect();
-    const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual([...TOOLS].sort());
+    const names = (await client.listTools()).tools
+      .map((t) => t.name)
+      .toSorted();
+    expect(names).toEqual([...TOOLS].toSorted());
   });
 
   it('declares an output schema on every tool', async () => {

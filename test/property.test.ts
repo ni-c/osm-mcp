@@ -189,7 +189,7 @@ describe('a bounding box covers everything it was given', () => {
         fc.array(point, { minLength: 1, maxLength: 20 }),
         (points) => {
           expect(boundingBoxOf(points)).toEqual(
-            boundingBoxOf([...points].reverse())
+            boundingBoxOf(points.toReversed())
           );
         }
       ),

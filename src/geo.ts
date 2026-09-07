@@ -5,9 +5,10 @@ export interface LatLon {
 
 const EARTH_RADIUS_M = 6_371_000;
 
+const toRad = (deg: number): number => (deg * Math.PI) / 180;
+
 /** Great-circle distance in meters (Haversine). */
 export function haversineMeters(a: LatLon, b: LatLon): number {
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
   const dLon = toRad(b.lon - a.lon);
   const sinLat = Math.sin(dLat / 2);

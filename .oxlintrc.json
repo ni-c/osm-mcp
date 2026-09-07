@@ -10,7 +10,8 @@
     "**/.vitepress/cache"
   ],
   "categories": {
-    "correctness": "error"
+    "correctness": "error",
+    "suspicious": "error"
   },
   "rules": {
     "no-unused-vars": [

@@ -97,17 +97,13 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         steps_truncated: z.string().optional(),
       }),
     },
-    async ({ waypoints, profile, include_steps, language }) =>
+    async ({ waypoints, profile: mode, include_steps, language: lang }) =>
       run(async () => {
-        const places = await deps.resolver.resolveAll(waypoints, language);
+        const places = await deps.resolver.resolveAll(waypoints, lang);
         const engine = deps.ors.enabled ? deps.ors : deps.osrm;
-        const result = await engine.route(
-          profile,
-          places,
-          include_steps ?? false
-        );
+        const result = await engine.route(mode, places, include_steps ?? false);
         return untrustedResult({
-          profile,
+          profile: mode,
           engine: deps.ors.enabled ? 'openrouteservice' : 'osrm',
           waypoints: places.map((p) => p.label),
           distance: formatDistance(result.distanceMeters),
@@ -175,7 +171,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         ),
       }),
     },
-    async ({ origins, destinations, profile, language }) =>
+    async ({ origins, destinations, profile: mode, language: lang }) =>
       run(async () => {
         if (origins.length + destinations.length > MAX_MATRIX_LOCATIONS) {
           throw new Error(
@@ -183,12 +179,12 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
               'to stay within the public OSRM usage policy'
           );
         }
-        const from = await deps.resolver.resolveAll(origins, language);
-        const to = await deps.resolver.resolveAll(destinations, language);
+        const from = await deps.resolver.resolveAll(origins, lang);
+        const to = await deps.resolver.resolveAll(destinations, lang);
         const engine = deps.ors.enabled ? deps.ors : deps.osrm;
-        const matrix = await engine.table(profile, from, to);
+        const matrix = await engine.table(mode, from, to);
         return untrustedResult({
-          profile,
+          profile: mode,
           engine: deps.ors.enabled ? 'openrouteservice' : 'osrm',
           origins: from.map((p) => p.label),
           destinations: to.map((p) => p.label),
@@ -231,18 +227,18 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         legs: z.array(routeLeg),
       }),
     },
-    async ({ stops, profile, roundtrip, language }) =>
+    async ({ stops, profile: mode, roundtrip, language: lang }) =>
       run(async () => {
-        const places = await deps.resolver.resolveAll(stops, language);
+        const places = await deps.resolver.resolveAll(stops, lang);
         // The OSRM /trip service does this natively; ORS has no equivalent in
         // its core API, so this tool always uses OSRM.
-        const trip = await deps.osrm.trip(profile, places, roundtrip ?? true);
+        const trip = await deps.osrm.trip(mode, places, roundtrip ?? true);
         const ordered = trip.order.map((i) => places[i]!);
         const orderedLabels = ordered.map((p) => p.label);
         if (roundtrip ?? true)
           orderedLabels.push(`${ordered[0]!.label} (back to start)`);
         return untrustedResult({
-          profile,
+          profile: mode,
           engine: 'osrm',
           optimized_order: orderedLabels,
           distance: formatDistance(trip.distanceMeters),
@@ -289,14 +285,14 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         }),
       }),
     },
-    async ({ center, profile, minutes, kilometers, language }) =>
+    async ({ center, profile: mode, minutes, kilometers, language: lang }) =>
       run(async () => {
         if ((minutes === undefined) === (kilometers === undefined)) {
           throw new Error('give exactly one of "minutes" or "kilometers"');
         }
-        const place = await deps.resolver.resolve(center, language);
+        const place = await deps.resolver.resolve(center, lang);
         const engine = deps.ors.enabled ? deps.ors : deps.valhalla;
-        const contours = await engine.isochrone(place, profile, {
+        const contours = await engine.isochrone(place, mode, {
           ...(minutes !== undefined ? { minutes } : {}),
           ...(kilometers !== undefined ? { kilometers } : {}),
         });
@@ -310,7 +306,7 @@ export function registerRoutingTools(server: McpServer, deps: Deps): void {
         const { north, south, east, west } = boundingBoxOf(contour.coordinates);
         return untrustedResult({
           center: place.label,
-          profile,
+          profile: mode,
           engine: deps.ors.enabled ? 'openrouteservice' : 'valhalla',
           budget: minutes !== undefined ? `${minutes} min` : `${kilometers} km`,
           bounding_box: { north, south, east, west },

@@ -165,7 +165,7 @@ export class OsrmBackend {
     // invert it into "visit order" (order[k] = index of the k-th stop).
     const order = data.waypoints
       .map((wp, inputIndex) => ({ inputIndex, at: wp.waypoint_index }))
-      .sort((a, b) => a.at - b.at)
+      .toSorted((a, b) => a.at - b.at)
       .map((entry) => entry.inputIndex);
     return {
       order,
