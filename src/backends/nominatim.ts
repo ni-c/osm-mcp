@@ -1,6 +1,14 @@
 import type { Config } from '../config.js';
 import { HttpClient, RateLimiter } from '../http.js';
 import { isValidLatLon, roundCoord } from '../geo.js';
+import {
+  arrayOf,
+  finiteNumberFromText,
+  MAX_NAME_LENGTH,
+  nonNegativeInteger,
+  objectOf,
+  text,
+} from '../shape.js';
 
 export interface GeocodeResult {
   lat: number;
@@ -13,15 +21,8 @@ export interface GeocodeResult {
   kind?: string;
 }
 
-interface NominatimPlace {
-  lat: string;
-  lon: string;
-  display_name?: string;
-  osm_type?: string;
-  osm_id?: number;
-  category?: string;
-  type?: string;
-}
+/** The three element kinds `poi_details` accepts; anything else is not an id. */
+const OSM_TYPES = new Set(['node', 'way', 'relation']);
 
 /**
  * Nominatim public API. Usage policy: at most 1 request/second, identifying
@@ -52,14 +53,16 @@ export class NominatimBackend {
     if (options.countrycodes) {
       params.set('countrycodes', options.countrycodes.toLowerCase());
     }
-    const data = (await this.http.request(
+    const data = await this.http.request(
       'nominatim',
       `${this.config.nominatimUrl}/search?${params}`,
       this.limiter
-    )) as NominatimPlace[];
-    return data
+    );
+    // A hit the shaper refuses is dropped, not fatal: one malformed entry
+    // must not take the other results with it.
+    return arrayOf(data)
       .map((place) => toResult(place))
-      .filter((result) => isValidLatLon(result.lat, result.lon));
+      .filter((result) => result !== null);
   }
 
   async reverse(
@@ -73,28 +76,45 @@ export class NominatimBackend {
       format: 'jsonv2',
       'accept-language': language,
     });
-    const data = (await this.http.request(
-      'nominatim',
-      `${this.config.nominatimUrl}/reverse?${params}`,
-      this.limiter
-    )) as NominatimPlace & { error?: string };
-    if (data.error || data.lat === undefined) return null;
-    const result = toResult(data);
-    return isValidLatLon(result.lat, result.lon) ? result : null;
+    const data = objectOf(
+      await this.http.request(
+        'nominatim',
+        `${this.config.nominatimUrl}/reverse?${params}`,
+        this.limiter
+      )
+    );
+    if (!data || data.error !== undefined) return null;
+    return toResult(data);
   }
 }
 
-function toResult(place: NominatimPlace): GeocodeResult {
-  const result: GeocodeResult = {
-    lat: roundCoord(Number(place.lat)),
-    lon: roundCoord(Number(place.lon)),
-    label: place.display_name ?? '(unnamed)',
-  };
-  if (place.osm_type && place.osm_id !== undefined) {
-    result.osm = `${place.osm_type}/${place.osm_id}`;
+/**
+ * One Nominatim place as a result, or null when it has no usable coordinate.
+ * Nominatim sends `lat`/`lon` as strings; everything else is taken only in the
+ * type the field is documented with, and cut to the result's budget.
+ */
+function toResult(place: unknown): GeocodeResult | null {
+  const p = objectOf(place);
+  if (!p) return null;
+  const lat = finiteNumberFromText(p.lat);
+  const lon = finiteNumberFromText(p.lon);
+  if (lat === undefined || lon === undefined || !isValidLatLon(lat, lon)) {
+    return null;
   }
-  if (place.category && place.type) {
-    result.kind = `${place.category}/${place.type}`;
+  const result: GeocodeResult = {
+    lat: roundCoord(lat),
+    lon: roundCoord(lon),
+    label: text(p.display_name, MAX_NAME_LENGTH) ?? '(unnamed)',
+  };
+  const osmType = text(p.osm_type, 8);
+  const osmId = nonNegativeInteger(p.osm_id);
+  if (osmType !== undefined && OSM_TYPES.has(osmType) && osmId !== undefined) {
+    result.osm = `${osmType}/${osmId}`;
+  }
+  const category = text(p.category, 100);
+  const type = text(p.type, 100);
+  if (category && type) {
+    result.kind = `${category}/${type}`;
   }
   return result;
 }

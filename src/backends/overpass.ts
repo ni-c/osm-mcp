@@ -1,14 +1,22 @@
 import type { Config } from '../config.js';
 import { HttpClient, OsmApiError, RateLimiter, Semaphore } from '../http.js';
-import { roundCoord, type LatLon } from '../geo.js';
+import { isValidLatLon, roundCoord, type LatLon } from '../geo.js';
+import {
+  arrayOf,
+  finiteNumber,
+  nonNegativeInteger,
+  objectOf,
+  stringTags,
+} from '../shape.js';
 
 export interface OverpassElement {
   type: 'node' | 'way' | 'relation';
   id: number;
+  /** Present when the element (or its centre) has a valid coordinate. */
   lat?: number;
   lon?: number;
-  center?: { lat: number; lon: number };
-  tags?: Record<string, string>;
+  /** Always a string-to-string map, bounded, possibly empty. */
+  tags: Record<string, string>;
 }
 
 export interface Poi extends LatLon {
@@ -16,6 +24,8 @@ export interface Poi extends LatLon {
   name: string;
   tags: Record<string, string>;
 }
+
+const ELEMENT_TYPES = new Set(['node', 'way', 'relation']);
 
 /**
  * Overpass API. The public main instance grants ~2 concurrent slots per IP and
@@ -39,6 +49,10 @@ export class OverpassBackend {
       retryDelay ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
+  /**
+   * Runs a query and answers with the shaped elements. Elements the shaper
+   * refuses (no type, no integer id) are dropped one by one, never the answer.
+   */
   async query(ql: string): Promise<OverpassElement[]> {
     const release = await this.semaphore.acquire();
     try {
@@ -50,18 +64,17 @@ export class OverpassBackend {
         if (attempt > 0) await this.retryDelay(1000 * attempt);
         attempt += 1;
         try {
-          const data = (await this.http.request(
-            'overpass',
-            endpoint,
-            this.limiter,
-            {
+          const data = objectOf(
+            await this.http.request('overpass', endpoint, this.limiter, {
               method: 'POST',
               headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
               body: `data=${encodeURIComponent(ql)}`,
               timeoutMs: 40_000,
-            }
-          )) as { elements?: OverpassElement[] };
-          return data.elements ?? [];
+            })
+          );
+          return arrayOf(data?.elements)
+            .map((element) => toElement(element))
+            .filter((element) => element !== null);
         } catch (error) {
           lastError = error;
           const status = error instanceof OsmApiError ? error.status : 0;
@@ -92,7 +105,9 @@ export class OverpassBackend {
       `[out:json][timeout:25];` +
       `nwr${selectorToQl(selector)}(around:${Math.round(radiusMeters)},${center.lat},${center.lon});` +
       `out center tags ${limit};`;
-    return (await this.query(ql)).map((el) => toPoi(el)).filter(isComplete);
+    return (await this.query(ql))
+      .map((el) => toPoi(el))
+      .filter((poi) => poi !== null);
   }
 
   async byId(
@@ -139,19 +154,40 @@ function selectorToQl(selector: TagSelector): string {
     : `["${selector.key}"="${selector.value}"]`;
 }
 
-function toPoi(element: OverpassElement): Partial<Poi> & { osm: string } {
-  const lat = element.lat ?? element.center?.lat;
-  const lon = element.lon ?? element.center?.lon;
+/**
+ * One raw Overpass element as the shape the tools read, or null when it has
+ * no type or no integer id. Coordinates are taken from the element or its
+ * `center`, and only when they are finite and on the globe; tags are always a
+ * bounded string map — a mirror that sends `null` for a value, or an object,
+ * sends no tag.
+ */
+export function toElement(raw: unknown): OverpassElement | null {
+  const element = objectOf(raw);
+  if (!element) return null;
+  const type = element.type;
+  if (typeof type !== 'string' || !ELEMENT_TYPES.has(type)) return null;
+  const id = nonNegativeInteger(element.id);
+  if (id === undefined) return null;
+  const center = objectOf(element.center);
+  const lat = finiteNumber(element.lat) ?? finiteNumber(center?.lat);
+  const lon = finiteNumber(element.lon) ?? finiteNumber(center?.lon);
   return {
-    osm: `${element.type}/${element.id}`,
-    ...(lat !== undefined && lon !== undefined
+    type: type as OverpassElement['type'],
+    id,
+    ...(lat !== undefined && lon !== undefined && isValidLatLon(lat, lon)
       ? { lat: roundCoord(lat), lon: roundCoord(lon) }
       : {}),
-    name: element.tags?.name ?? '(unnamed)',
-    tags: element.tags ?? {},
+    tags: stringTags(element.tags),
   };
 }
 
-function isComplete(poi: Partial<Poi> & { osm: string }): poi is Poi {
-  return poi.lat !== undefined && poi.lon !== undefined;
+function toPoi(element: OverpassElement): Poi | null {
+  if (element.lat === undefined || element.lon === undefined) return null;
+  return {
+    osm: `${element.type}/${element.id}`,
+    lat: element.lat,
+    lon: element.lon,
+    name: element.tags.name ?? '(unnamed)',
+    tags: element.tags,
+  };
 }

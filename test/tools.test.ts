@@ -13,6 +13,9 @@ async function connect(env: Record<string, string> = {}): Promise<Client> {
     client.connect(clientTransport),
     server.connect(serverTransport),
   ]);
+  // Listing loads every output schema into the client, so each success-path
+  // call below is validated on the client side too, not only by the server.
+  await client.listTools();
   return client;
 }
 
@@ -304,7 +307,7 @@ describe('isochrone', () => {
         ],
       })
     );
-    const client = await connect({ ORS_API_KEY: 'k' });
+    const client = await connect({ ORS_API_KEY: 'test-key-0123456789' });
     const result = await client.callTool({
       name: 'isochrone',
       arguments: { center: '49.75,6.64', profile: 'car', kilometers: 5 },
@@ -505,4 +508,298 @@ describe('response budgets', () => {
     const description = data.tags.description ?? '';
     expect(description.length).toBeLessThanOrEqual(520);
   });
+});
+
+/*
+ * Review 2026-09-07. What a backend answers reaches an output schema, and
+ * the SDK answers a violation with an error result for the whole call. Each
+ * test here is a payload a public service (or the community mirror the
+ * default Overpass list falls back to) can send, and asserts the tool either
+ * answers with the good part or with a sentence — never with
+ * "Output validation error".
+ */
+describe('shaping what the backends answer', () => {
+  const nominatim = [
+    { lat: '49.7596', lon: '6.6439', display_name: 'Trier, Germany' },
+  ];
+  const ESC = String.fromCharCode(27);
+
+  it('answers a sentence when OSRM sends a route without a usable distance', async () => {
+    stubFetch((url) =>
+      url.includes('nominatim')
+        ? jsonResponse(nominatim)
+        : jsonResponse({ code: 'Ok', routes: [{ legs: [] }] })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'route',
+      arguments: { waypoints: ['Trier', '49.6,6.1'], profile: 'car' },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toContain('without a usable distance');
+    expect(firstText(result)).not.toContain('Output validation');
+  });
+
+  it('treats a distance of 1e999 (Infinity after JSON.parse) the same way', async () => {
+    stubFetch(
+      () =>
+        new Response(
+          '{"code":"Ok","routes":[{"distance":1e999,"duration":10,"legs":[]}]}',
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'route',
+      arguments: { waypoints: ['49.75,6.64', '49.76,6.65'], profile: 'car' },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toContain('without a usable distance');
+  });
+
+  it('drops a POI whose coordinate is not a number instead of the whole listing', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        elements: [
+          { type: 'node', id: 1, lat: 'abc', lon: 6.64, tags: { name: 'bad' } },
+          {
+            type: 'node',
+            id: 2,
+            lat: 49.75,
+            lon: 6.64,
+            tags: { name: 'good' },
+          },
+          { type: 'node', id: 3, lat: 49.75, lon: 6.64, tags: { name: {} } },
+          { type: 'thing', id: 4, lat: 49.75, lon: 6.64, tags: {} },
+          { type: 'node', id: 'five', lat: 49.75, lon: 6.64, tags: {} },
+        ],
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'find_nearby_pois',
+      arguments: { near: '49.75,6.64', category: 'cafe' },
+    });
+    expect(result.isError).toBeFalsy();
+    const data = parseJson<{ count: number; results: Array<{ name: string }> }>(
+      result
+    );
+    expect(data.count).toBe(2);
+    expect(data.results.map((r) => r.name)).toEqual(['good', '(unnamed)']);
+  });
+
+  it('spells or drops tag values that are not strings', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        elements: [
+          {
+            type: 'node',
+            id: 1,
+            lat: 49.75,
+            lon: 6.64,
+            tags: { name: 'a', ele: 137, foo: null, bar: { x: 1 } },
+          },
+        ],
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'poi_details',
+      arguments: { osm_id: 'node/1' },
+    });
+    expect(result.isError).toBeFalsy();
+    const data = parseJson<{ tags: Record<string, string> }>(result);
+    expect(data.tags).toEqual({ name: 'a', ele: '137' });
+  });
+
+  it('keeps a tag named __proto__', async () => {
+    stubFetch(
+      () =>
+        new Response(
+          '{"elements":[{"type":"node","id":1,"lat":49.75,"lon":6.64,"tags":{"__proto__":"x","name":"a"}}]}',
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'poi_details',
+      arguments: { osm_id: 'node/1' },
+    });
+    const tags = (result.structuredContent as { tags: Record<string, string> })
+      .tags;
+    expect(Object.hasOwn(tags, '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(tags)).toBe(Object.prototype);
+    expect(parseJson<{ tags: Record<string, string> }>(result).tags.name).toBe(
+      'a'
+    );
+  });
+
+  it('caps a name the mirror made a megabyte long', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        elements: [
+          {
+            type: 'node',
+            id: 1,
+            lat: 49.75,
+            lon: 6.64,
+            tags: { name: 'n'.repeat(1_000_000) },
+          },
+        ],
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'poi_details',
+      arguments: { osm_id: 'node/1' },
+    });
+    const data = parseJson<{ name: string }>(result);
+    expect(data.name).toHaveLength(500 + '… (truncated)'.length);
+    expect(firstText(result).length).toBeLessThan(2000);
+  });
+
+  it('drops a geocoding hit whose coordinate is not a number, keeps the rest', async () => {
+    stubFetch(() =>
+      jsonResponse([
+        { lat: '49.7', lon: '6.6', display_name: 12345 },
+        { lat: 'north', lon: '6.6', display_name: 'nowhere' },
+        { lat: '49.7', lon: '6.6', display_name: 'Trier' },
+      ])
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'geocode',
+      arguments: { query: 'x' },
+    });
+    expect(result.isError).toBeFalsy();
+    const data = parseJson<{ results: Array<{ label: string }> }>(result);
+    expect(data.results.map((r) => r.label)).toEqual(['(unnamed)', 'Trier']);
+  });
+
+  it('leaves a contour point at 1e999 out of the bounding box', async () => {
+    stubFetch(
+      () =>
+        new Response(
+          '{"features":[{"properties":{"contour":15},"geometry":{"coordinates":[[6.62,49.74],[1e999,49.7],[6.66,49.76]]}}]}',
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'isochrone',
+      arguments: { center: '49.75,6.64', profile: 'foot', minutes: 15 },
+    });
+    expect(result.isError).toBeFalsy();
+    const data = parseJson<{ bounding_box: { east: number } }>(result);
+    expect(data.bounding_box.east).toBe(6.66);
+  });
+
+  it('reads a matrix cell that is not a number as "no route"', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        code: 'Ok',
+        durations: [['abc', 600]],
+        distances: [[5, null]],
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'route_matrix',
+      arguments: {
+        origins: ['49.75,6.64'],
+        destinations: ['49.76,6.65', '49.77,6.66'],
+        profile: 'car',
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    const data = parseJson<{ durations_minutes: (number | null)[][] }>(result);
+    expect(data.durations_minutes).toEqual([[null, 10]]);
+  });
+
+  it('omits a leg summary that is not text', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        code: 'Ok',
+        routes: [
+          {
+            distance: 2,
+            duration: 2,
+            legs: [
+              { distance: 1, duration: 1, summary: 7 },
+              { distance: 1, duration: 1, summary: 'B51' },
+            ],
+          },
+        ],
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'route',
+      arguments: {
+        waypoints: ['49.75,6.64', '49.76,6.65', '49.77,6.66'],
+        profile: 'car',
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    const data = parseJson<{ legs: Array<{ via?: string }> }>(result);
+    expect(data.legs.map((l) => l.via)).toEqual([undefined, 'B51']);
+  });
+
+  it('refuses an optimized order that does not cover the stops', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        code: 'Ok',
+        trips: [{ distance: 1, duration: 1, legs: [] }],
+        waypoints: [{ waypoint_index: 0 }, { waypoint_index: 0 }, {}],
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'optimize_route',
+      arguments: {
+        stops: ['49.75,6.64', '49.76,6.65', '49.77,6.66'],
+        profile: 'bike',
+      },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toContain('does not cover the stops');
+  });
+
+  it('quotes an OSRM error as the service’s text, cut and labelled', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        code: 'NoRoute',
+        message: `${ESC}[2J${'X'.repeat(100_000)}`,
+      })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'route',
+      arguments: { waypoints: ['49.75,6.64', '49.76,6.65'], profile: 'car' },
+    });
+    expect(result.isError).toBe(true);
+    const text = firstText(result);
+    expect(text).toContain('(untrusted text from the service) NoRoute');
+    expect(text).toContain('… (truncated)');
+    expect(text.length).toBeLessThan(500);
+    expect(text).not.toContain(ESC);
+  });
+
+  it('fails over to the next Overpass mirror even when the error page is huge', async () => {
+    // A 5xx whose body exceeds the data cap used to surface as a size error,
+    // a plain Error with no status, and the failover keyed on the status never
+    // saw it. Status first, then a bounded read of the error body.
+    const mock = stubFetch(
+      () => new Response('x'.repeat(9 * 1024 * 1024), { status: 502 })
+    );
+    const client = await connect();
+    const result = await client.callTool({
+      name: 'poi_details',
+      arguments: { osm_id: 'node/1' },
+    });
+    expect(result.isError).toBe(true);
+    expect(mock).toHaveBeenCalledTimes(2);
+    expect(firstText(result)).toContain('all Overpass endpoints failed');
+    expect(firstText(result)).toContain('HTTP 502');
+  }, 30_000);
 });

@@ -80,12 +80,16 @@ function clean(value: unknown): unknown {
   }
   if (Array.isArray(value)) return value.map(clean);
   if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value)) {
-      // The key too: an OSM tag name is as much a mapper's typing as its value.
-      out[redactSecrets(key).replace(UNSAFE_IN_DATA, '')] = clean(entry);
-    }
-    return out;
+    // Object.fromEntries defines every key as an own property. A plain
+    // `out[key] = …` with a key of `__proto__` — a tag name any mapper can
+    // type — would set the prototype instead and drop the tag in silence.
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        // The key too: an OSM tag name is as much a mapper's typing as its value.
+        redactSecrets(key).replace(UNSAFE_IN_DATA, ''),
+        clean(entry),
+      ])
+    );
   }
   return value;
 }

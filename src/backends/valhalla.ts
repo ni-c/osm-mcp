@@ -1,6 +1,7 @@
 import type { Config } from '../config.js';
 import { HttpClient, RateLimiter } from '../http.js';
 import { flattenCoordinates, type LatLon } from '../geo.js';
+import { arrayOf, measure, objectOf } from '../shape.js';
 import type { Profile } from './osrm.js';
 
 const COSTING: Record<Profile, string> = {
@@ -44,21 +45,20 @@ export class ValhallaBackend {
       polygons: false,
     };
     const params = new URLSearchParams({ json: JSON.stringify(request) });
-    const data = (await this.http.request(
-      'valhalla',
-      `${this.config.valhallaUrl}/isochrone?${params}`,
-      this.limiter
-    )) as {
-      features?: Array<{
-        properties?: { contour?: number };
-        geometry?: { type?: string; coordinates?: unknown };
-      }>;
-    };
-    return (data.features ?? [])
-      .filter((f) => f.geometry?.coordinates)
+    const data = objectOf(
+      await this.http.request(
+        'valhalla',
+        `${this.config.valhallaUrl}/isochrone?${params}`,
+        this.limiter
+      )
+    );
+    return arrayOf(data?.features)
+      .map((feature) => objectOf(feature))
+      .filter((f) => f !== undefined)
       .map((f) => ({
-        value: f.properties?.contour ?? 0,
-        coordinates: flattenCoordinates(f.geometry!.coordinates),
-      }));
+        value: measure(objectOf(f.properties)?.contour) ?? 0,
+        coordinates: flattenCoordinates(objectOf(f.geometry)?.coordinates),
+      }))
+      .filter((c) => c.coordinates.length > 0);
   }
 }

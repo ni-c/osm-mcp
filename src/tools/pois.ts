@@ -40,43 +40,31 @@ const CORE_TAGS = [
   'wheelchair',
 ] as const;
 
+/**
+ * The handful of tags a list entry shows. Values are already strings bounded
+ * to `MAX_TAG_VALUE_LENGTH` — the Overpass backend shapes every tag set on
+ * the way in, so this is a selection, not a second sanitiser.
+ */
 function coreTags(item: Poi): Record<string, string> {
-  const tags: Record<string, string> = {};
+  const entries: Array<[string, string]> = [];
   for (const key of CORE_TAGS) {
     const value = item.tags[key];
-    // Same value budget as capTags: this is the higher-volume path (up to 25
-    // results per call), so it must not carry unbounded tag values either.
-    if (value) {
-      tags[key] =
-        value.length > MAX_TAG_VALUE_LENGTH
-          ? `${value.slice(0, MAX_TAG_VALUE_LENGTH)}… (truncated)`
-          : value;
-    }
+    if (value) entries.push([key, value]);
   }
-  return tags;
+  return Object.fromEntries(entries);
 }
 
 const OSM_ID = /^(node|way|relation)\/(\d{1,12})$/;
 
 /** Response budget for poi_details: mega-relations carry hundreds of tags. */
 const MAX_DETAIL_TAGS = 60;
-const MAX_TAG_VALUE_LENGTH = 500;
 
 function capTags(tags: Record<string, string>): {
   tags: Record<string, string>;
   tags_truncated?: string;
 } {
   const entries = Object.entries(tags);
-  const capped = Object.fromEntries(
-    entries
-      .slice(0, MAX_DETAIL_TAGS)
-      .map(([key, value]) => [
-        key,
-        value.length > MAX_TAG_VALUE_LENGTH
-          ? `${value.slice(0, MAX_TAG_VALUE_LENGTH)}… (truncated)`
-          : value,
-      ])
-  );
+  const capped = Object.fromEntries(entries.slice(0, MAX_DETAIL_TAGS));
   return {
     tags: capped,
     ...(entries.length > MAX_DETAIL_TAGS
@@ -211,19 +199,17 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
         if (!element) {
           throw new Error(`no OSM element found for ${osm_id}`);
         }
-        const lat = element.lat ?? element.center?.lat;
-        const lon = element.lon ?? element.center?.lon;
         return untrustedResult({
           osm: osm_id,
-          name: element.tags?.name ?? '(unnamed)',
-          ...(lat !== undefined && lon !== undefined
+          name: element.tags.name ?? '(unnamed)',
+          ...(element.lat !== undefined && element.lon !== undefined
             ? {
-                lat: roundCoord(lat),
-                lon: roundCoord(lon),
+                lat: element.lat,
+                lon: element.lon,
                 map: `https://www.openstreetmap.org/${osm_id}`,
               }
             : {}),
-          ...capTags(element.tags ?? {}),
+          ...capTags(element.tags),
         });
       })
   );

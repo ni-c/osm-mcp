@@ -208,7 +208,7 @@ describe('server', () => {
         routes: [{ summary: { distance: 44_000, duration: 31_680 } }],
       })
     );
-    const client = await connect({ ORS_API_KEY: 'k' });
+    const client = await connect({ ORS_API_KEY: 'test-key-0123456789' });
     const result = await client.callTool({
       name: 'route',
       arguments: {

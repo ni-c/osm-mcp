@@ -7,6 +7,7 @@ import {
   Semaphore,
   TtlCache,
   sanitizeErrorBody,
+  upstreamText,
 } from '../src/http.js';
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -307,5 +308,85 @@ describe('audit regressions', () => {
     await expect(
       http.request('svc', 'https://example.com/x', null)
     ).rejects.toThrow(/too large/);
+  });
+});
+
+describe('review 2026-09-07', () => {
+  it('decides on the status before reading the body', async () => {
+    // A 5xx with a body past the data cap is a 5xx, not a size error: the
+    // status is what the Overpass failover and the 429 hint are keyed on.
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response('x'.repeat(9 * 1024 * 1024), { status: 503 })
+        )
+    );
+    const http = new HttpClient('a', 0);
+    await expect(
+      http.request('overpass', 'https://example.com/x', null)
+    ).rejects.toMatchObject({ status: 503, service: 'overpass' });
+  });
+
+  it('does not refuse an error answer for its declared size', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('denied', {
+          status: 401,
+          headers: { 'content-length': String(99 * 1024 * 1024) },
+        })
+      )
+    );
+    const http = new HttpClient('a', 0);
+    await expect(
+      http.request('svc', 'https://example.com/x', null)
+    ).rejects.toMatchObject({ status: 401, body: 'denied' });
+  });
+
+  it('cuts an error body at 64 KiB instead of refusing it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(new Response('e'.repeat(200_000), { status: 500 }))
+    );
+    const http = new HttpClient('a', 0);
+    const error = await http.request('svc', 'https://example.com/x', null).then(
+      () => null,
+      (e: unknown) => e as OsmApiError
+    );
+    expect(error?.status).toBe(500);
+    expect(error?.body).toHaveLength(64 * 1024);
+  });
+
+  it('still caps the body of a successful answer', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response('x'.repeat(9 * 1024 * 1024), { status: 200 })
+        )
+    );
+    const http = new HttpClient('a', 0);
+    await expect(
+      http.request('svc', 'https://example.com/x', null)
+    ).rejects.toThrow(/exceeded the .* cap/);
+  });
+
+  it('labels, cleans and cuts text the service wrote', () => {
+    expect(upstreamText('NoRoute')).toBe(
+      '(untrusted text from the service) NoRoute'
+    );
+    expect(upstreamText(`${String.fromCharCode(27)}[2J bad ?key=SECRET`)).toBe(
+      '(untrusted text from the service) [2J bad ?key=[redacted]'
+    );
+    expect(upstreamText('x'.repeat(1000), 20)).toBe(
+      `(untrusted text from the service) ${'x'.repeat(20)}… (truncated)`
+    );
+    expect(upstreamText(undefined)).toBe('(none)');
+    expect(upstreamText({ a: 1 })).toBe('(non-text value of type object)');
   });
 });

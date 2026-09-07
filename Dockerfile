@@ -28,9 +28,12 @@ ENV NODE_ENV=production
 # image ships the fix.
 RUN apk add --no-cache --upgrade libcrypto3 libssl3
 
-# The runtime only ever executes `node dist/index.js` — remove the bundled npm
-# entirely instead of chasing CVEs in its vendored dependencies.
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+# The runtime only ever executes `node dist/index.js` — remove the bundled npm,
+# and the yarn and corepack the base image ships beside it, instead of chasing
+# CVEs in their vendored dependencies.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+    /usr/local/lib/node_modules/corepack /usr/local/bin/corepack \
+    /opt/yarn-v* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
