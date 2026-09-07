@@ -42,6 +42,17 @@ const DEFAULTS = {
   ORS_BASE_URL: 'https://api.openrouteservice.org',
 } as const;
 
+/** Printable ASCII from `!` to `~`, the only characters a header value may hold. */
+const ORS_KEY_SHAPE = /^[!-~]{8,256}$/;
+
+/**
+ * Ceiling on the Overpass mirror list. Every entry costs a growing back-off
+ * plus a 40-second request timeout when the mirrors are down, so a list is a
+ * per-call budget in disguise; two public interpreters is the default and
+ * eight is more than anybody runs.
+ */
+const MAX_OVERPASS_ENDPOINTS = 8;
+
 /**
  * Reads the configuration from environment variables. Every variable has a
  * public default, so the server starts (and all tools work) with an empty
@@ -57,6 +68,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // sitting in the environment. Everything after this point reads the local.
   const orsApiKey = env.ORS_API_KEY;
   delete env.ORS_API_KEY;
+  // The key goes into an Authorization header, and undici refuses a header
+  // value with a control character by quoting the value in its TypeError —
+  // which would carry the key into the error result. Refuse the shape here,
+  // without echoing it. Real ORS keys are 56 hexadecimal characters.
+  if (orsApiKey !== undefined && !ORS_KEY_SHAPE.test(orsApiKey)) {
+    throw new ConfigError(
+      'ORS_API_KEY must be 8 to 256 visible ASCII characters (no spaces or control characters)'
+    );
+  }
 
   const userAgent =
     env.OSM_USER_AGENT ??
@@ -78,16 +98,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     );
   }
 
+  const overpassUrls = (env.OVERPASS_BASE_URL ?? DEFAULTS.OVERPASS_BASE_URL)
+    .split(',')
+    .map((url) => url.trim())
+    .filter((url) => url.length > 0);
+  if (overpassUrls.length === 0) {
+    throw new ConfigError(
+      'OVERPASS_BASE_URL must name at least one interpreter endpoint'
+    );
+  }
+  if (overpassUrls.length > MAX_OVERPASS_ENDPOINTS) {
+    throw new ConfigError(
+      `OVERPASS_BASE_URL lists ${overpassUrls.length} endpoints; at most ${MAX_OVERPASS_ENDPOINTS} are tried per query`
+    );
+  }
+
   return {
     userAgent,
     nominatimUrl: baseUrl(env, 'NOMINATIM_BASE_URL'),
     photonUrl: baseUrl(env, 'PHOTON_BASE_URL'),
     osrmUrl: baseUrl(env, 'OSRM_BASE_URL'),
-    overpassUrls: (env.OVERPASS_BASE_URL ?? DEFAULTS.OVERPASS_BASE_URL)
-      .split(',')
-      .map((url) => url.trim())
-      .filter((url) => url.length > 0)
-      .map((url) => validateUrl('OVERPASS_BASE_URL', url)),
+    overpassUrls: overpassUrls.map((url) =>
+      validateUrl('OVERPASS_BASE_URL', url)
+    ),
     valhallaUrl: baseUrl(env, 'VALHALLA_BASE_URL'),
     orsUrl,
     orsApiKey,
@@ -115,8 +148,10 @@ function validateUrl(name: string, value: string): string {
     );
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    // The scheme is cut and cleaned before it is quoted: a hexadecimal key
+    // with a colon after it parses as a URL whose scheme *is* the key.
     throw new ConfigError(
-      `${name} must use http:// or https:// (got ${parsed.protocol})`
+      `${name} must use http:// or https:// (got ${quoted(parsed.protocol)})`
     );
   }
   // Credentials embedded in a URL would end up in logs and error messages.
@@ -138,7 +173,24 @@ function validateUrl(name: string, value: string): string {
   // Return the parsed URL, not the raw input: the WHATWG parser has already
   // stripped whitespace and normalized the host during validation, and the
   // value used downstream should be exactly the value that was validated.
-  return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
+  return trimTrailingSlashes(`${parsed.origin}${parsed.pathname}`);
+}
+
+/**
+ * A counted scan rather than `/\/+$/`: that regex is tried from every slash of
+ * a run and consumes the run each time, so a path of 80 000 slashes followed
+ * by one letter cost almost two seconds at startup.
+ */
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) end -= 1;
+  return value.slice(0, end);
+}
+
+/** A configuration fragment fit for a diagnostic: visible ASCII only, short. */
+function quoted(value: string, max = 40): string {
+  const visible = value.replace(/[^!-~]/g, '');
+  return visible.length > max ? `${visible.slice(0, max)}…` : visible;
 }
 
 function isCleartextRemote(url: string): boolean {

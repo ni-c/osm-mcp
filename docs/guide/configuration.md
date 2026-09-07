@@ -54,6 +54,8 @@ will not answer these paths. See the [FAQ](/guide/faq) for why this exists.
 `OVERPASS_BASE_URL` takes a **comma-separated list** of interpreter endpoints.
 They are tried in order: a 429 or 5xx from one endpoint fails over to the next,
 which is how the default configuration survives the main instance being busy.
+At least one and at most eight endpoints are accepted — each entry is a
+growing back-off plus a 40-second timeout when the mirrors are down.
 
 ## `ORS_API_KEY`
 

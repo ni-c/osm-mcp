@@ -14,11 +14,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+[Unreleased]: https://github.com/ni-c/osm-mcp/compare/v0.3.1...HEAD
 
-- The tool reference marks the `essential` preset and the tools that ask a
-  person before they act, per tool rather than only in the introduction. A test
-  keeps both sets in step with the code.
+## [0.3.1] - 2026-09-07
+
+### Security
+
+- Every value a service answers is shaped before it reaches an output schema
+  (`src/shape.ts`). A number is taken only when it is finite — JSON `1e999`
+  parses to `Infinity` — a distance or duration only when it is non-negative
+  and within a ceiling, a string only when it is one; names, labels, road
+  summaries, turn instructions and tag keys are cut to 500, 500, 500, 300 and
+  255 characters. Before this, a route whose `distance` was missing or
+  `1e999`, a POI whose `lat` was `"abc"` or whose `name` was an object, a
+  geocoding hit whose `display_name` was a number, a matrix cell that was text,
+  a contour point at `1e999` and a leg `summary` that was a number each failed
+  the SDK's output validation — and one such element in a listing took every
+  other element down with it. A `null` tag value threw a `TypeError`. Each of
+  the six public services this server talks to, including the community
+  Overpass mirror in the default list, could send any of them. An element the
+  shaper refuses is now dropped from a listing; a route without a usable
+  distance is answered with a sentence; `optimize_route` refuses a visiting
+  order that does not cover the stops. A property test feeds arbitrary JSON —
+  and envelopes with the right shape and random leaves — to every tool and
+  asserts that none answers with a validation error.
+- The HTTP status is decided before the body is read. A non-2xx answer's body
+  is read under its own 64 KiB ceiling that cuts rather than refuses. A 5xx
+  with a body past the 8 MB data cap used to surface as a size error — a plain
+  `Error` with no status — so the Overpass mirror failover and the 429 hint,
+  both keyed on the status, never saw it.
+- Text a service writes about a failure — OSRM's `code` and `message` — is
+  quoted into the error result cut to 40 and 200 characters, stripped of
+  control characters and labelled as untrusted text. It used to be
+  concatenated as it arrived; a hundred thousand characters were a hundred
+  thousand characters in the model context, with nothing saying whose words
+  they were.
+- `ORS_API_KEY` must be 8 to 256 visible ASCII characters. The key travels in
+  an `Authorization` header, and undici quotes a header value it refuses in its
+  own `TypeError` — the redaction caught it, but only the redaction. The server
+  now refuses the shape at startup without echoing it.
+- A refused URL scheme is quoted with at most 40 visible characters. A
+  hexadecimal key with a colon after it is a valid URL whose scheme is the key,
+  and the error message printed the scheme in full.
+- `OVERPASS_BASE_URL` accepts at least one and at most eight endpoints. Each
+  entry is a growing back-off plus a 40-second timeout when the mirrors are
+  down; five hundred were accepted.
+- Trailing slashes on a base URL are trimmed by a counted scan. `/\/+$/` was
+  tried from every slash of a run and consumed the run each time: 80 000 of
+  them followed by one letter cost almost two seconds at startup.
+- A tag named `__proto__` — legal JSON, and a name any mapper can type — is
+  kept as an own property. `out[key] = value` in the result cleaner set the
+  prototype instead and dropped the tag in silence.
+- CI: `actions/dependency-review-action` on pull requests (`fail-on-severity:
+high`); the publish job installs with `npm ci --ignore-scripts` so no
+  dependency's install hook runs beside the OIDC token; `gh release create
+--verify-tag`; the weekly smoke job's checkout no longer persists
+  credentials. The runtime image drops yarn and corepack next to npm.
+
+### Fixed
+
+- `boundingBoxOf` folds `-0` into `0`. A contour on the equator or the
+  meridian can carry both spellings, and `-0` serialises as `0` in the text
+  block while `structuredContent` kept the sign.
+- Contour points off the globe are left out of the bounding box instead of
+  failing the isochrone.
+- The test harness lists the tools before calling them, so every success
+  path is checked against its output schema on the client side as well.
 
 ### Added
 
@@ -34,13 +95,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- oxlint's `suspicious` category is on; 34 findings fixed (mostly
+  `Array#toSorted()` over copy-and-sort and un-shadowed names). No runtime
+  behaviour changed.
+- The tool reference marks the `essential` preset and the tools that ask a
+  person before they act, per tool rather than only in the introduction. A test
+  keeps both sets in step with the code.
 - Source maps are no longer published in the npm tarball. Node reads them only
   under `--enable-source-maps`, which nothing here sets, and the maps pointed at
   a `src/` this package does not ship — so a stack trace under that flag named a
   file nobody could open. `dist/**/*.js` is unchanged; the package is about a
   fifth smaller.
 
-[Unreleased]: https://github.com/ni-c/osm-mcp/compare/v0.3.0...HEAD
+[0.3.1]: https://github.com/ni-c/osm-mcp/compare/v0.3.0...v0.3.1
 
 ## [0.3.0] - 2026-09-03
 

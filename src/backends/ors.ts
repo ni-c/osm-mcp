@@ -1,6 +1,14 @@
 import type { Config } from '../config.js';
 import { HttpClient, RateLimiter } from '../http.js';
 import { flattenCoordinates, type LatLon } from '../geo.js';
+import {
+  arrayOf,
+  MAX_INSTRUCTION_LENGTH,
+  measure,
+  numberMatrix,
+  objectOf,
+  text,
+} from '../shape.js';
 import type { OsrmMatrix, OsrmRoute, Profile } from './osrm.js';
 import type { IsochroneContour } from './valhalla.js';
 
@@ -9,17 +17,6 @@ const ORS_PROFILE: Record<Profile, string> = {
   car: 'driving-car',
   bike: 'cycling-regular',
 };
-
-interface OrsRouteResponse {
-  routes?: Array<{
-    summary?: { distance?: number; duration?: number };
-    segments?: Array<{
-      distance: number;
-      duration: number;
-      steps?: Array<{ instruction?: string; distance?: number }>;
-    }>;
-  }>;
-}
 
 /**
  * OpenRouteService — active only when ORS_API_KEY is set; replaces OSRM for
@@ -43,8 +40,11 @@ export class OrsBackend {
     return Boolean(this.config.orsApiKey);
   }
 
-  private post(path: string, body: unknown): Promise<unknown> {
-    return this.http.request(
+  private async post(
+    path: string,
+    body: unknown
+  ): Promise<Record<string, unknown>> {
+    const data = await this.http.request(
       'ors',
       `${this.config.orsUrl}${path}`,
       this.limiter,
@@ -57,6 +57,7 @@ export class OrsBackend {
         body: JSON.stringify(body),
       }
     );
+    return objectOf(data) ?? {};
   }
 
   async route(
@@ -64,26 +65,39 @@ export class OrsBackend {
     coords: LatLon[],
     includeSteps = false
   ): Promise<OsrmRoute> {
-    const data = (await this.post(`/v2/directions/${ORS_PROFILE[profile]}`, {
+    const data = await this.post(`/v2/directions/${ORS_PROFILE[profile]}`, {
       coordinates: coords.map((c) => [c.lon, c.lat]),
       instructions: includeSteps,
-    })) as OrsRouteResponse;
-    const route = data.routes?.[0];
+    });
+    const route = objectOf(arrayOf(data.routes)[0]);
     if (!route) throw new Error('ORS returned no route');
+    const summary = objectOf(route.summary);
+    const distance = measure(summary?.distance);
+    const duration = measure(summary?.duration);
+    if (distance === undefined || duration === undefined) {
+      throw new Error(
+        'ORS returned a route without a usable distance and duration'
+      );
+    }
+    const segments = arrayOf(route.segments).map((raw) => objectOf(raw) ?? {});
     return {
-      distanceMeters: route.summary?.distance ?? 0,
-      durationSeconds: route.summary?.duration ?? 0,
-      legs: (route.segments ?? []).map((segment) => ({
-        distanceMeters: segment.distance,
-        durationSeconds: segment.duration,
+      distanceMeters: distance,
+      durationSeconds: duration,
+      legs: segments.map((segment) => ({
+        distanceMeters: measure(segment.distance) ?? 0,
+        durationSeconds: measure(segment.duration) ?? 0,
       })),
       ...(includeSteps
         ? {
-            steps: (route.segments ?? []).flatMap((segment) =>
-              (segment.steps ?? []).map((step) => ({
-                instruction: step.instruction ?? '',
-                distanceMeters: step.distance ?? 0,
-              }))
+            steps: segments.flatMap((segment) =>
+              arrayOf(segment.steps).map((raw) => {
+                const step = objectOf(raw) ?? {};
+                return {
+                  instruction:
+                    text(step.instruction, MAX_INSTRUCTION_LENGTH) ?? '',
+                  distanceMeters: measure(step.distance) ?? 0,
+                };
+              })
             ),
           }
         : {}),
@@ -96,18 +110,15 @@ export class OrsBackend {
     destinations: LatLon[]
   ): Promise<OsrmMatrix> {
     const locations = [...origins, ...destinations].map((c) => [c.lon, c.lat]);
-    const data = (await this.post(`/v2/matrix/${ORS_PROFILE[profile]}`, {
+    const data = await this.post(`/v2/matrix/${ORS_PROFILE[profile]}`, {
       locations,
       sources: origins.map((_, i) => i),
       destinations: destinations.map((_, i) => i + origins.length),
       metrics: ['distance', 'duration'],
-    })) as {
-      durations?: (number | null)[][];
-      distances?: (number | null)[][];
-    };
+    });
     return {
-      durations: data.durations ?? [],
-      distances: data.distances ?? [],
+      durations: numberMatrix(data.durations),
+      distances: numberMatrix(data.distances),
     };
   }
 
@@ -117,24 +128,22 @@ export class OrsBackend {
     options: { minutes?: number; kilometers?: number }
   ): Promise<IsochroneContour[]> {
     const isTime = options.minutes !== undefined;
-    const data = (await this.post(`/v2/isochrones/${ORS_PROFILE[profile]}`, {
+    const data = await this.post(`/v2/isochrones/${ORS_PROFILE[profile]}`, {
       locations: [[center.lon, center.lat]],
       range: [isTime ? options.minutes! * 60 : options.kilometers! * 1000],
       range_type: isTime ? 'time' : 'distance',
-    })) as {
-      features?: Array<{
-        properties?: { value?: number };
-        geometry?: { coordinates?: unknown };
-      }>;
-    };
-    return (data.features ?? [])
-      .filter((f) => f.geometry?.coordinates)
-      .map((f) => ({
-        // Normalize back to the Valhalla convention: minutes or kilometers.
-        value: isTime
-          ? (f.properties?.value ?? 0) / 60
-          : (f.properties?.value ?? 0) / 1000,
-        coordinates: flattenCoordinates(f.geometry!.coordinates),
-      }));
+    });
+    return arrayOf(data.features)
+      .map((feature) => objectOf(feature))
+      .filter((f) => f !== undefined)
+      .map((f) => {
+        const value = measure(objectOf(f.properties)?.value) ?? 0;
+        return {
+          // Normalize back to the Valhalla convention: minutes or kilometers.
+          value: isTime ? value / 60 : value / 1000,
+          coordinates: flattenCoordinates(objectOf(f.geometry)?.coordinates),
+        };
+      })
+      .filter((c) => c.coordinates.length > 0);
   }
 }

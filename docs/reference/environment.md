@@ -36,12 +36,19 @@ would otherwise be printed verbatim into the MCP host's log.
 Loopback means `localhost`, `*.localhost`, `127.*` or `::1` (IPv6 brackets are
 stripped before matching).
 
-Two more rules:
+More rules:
 
 - `OSM_CACHE_TTL` must be a plain number of seconds; anything else exits.
 - `ORS_BASE_URL` must be `https://` (or loopback) while `ORS_API_KEY` is set —
   the key travels in an `Authorization` header and would otherwise cross the
   network unencrypted.
+- `ORS_API_KEY` must be 8 to 256 visible ASCII characters (no spaces, no
+  control characters) — the shape an `Authorization` header can carry. A key
+  that fails this is refused at startup without being echoed.
+- `OVERPASS_BASE_URL` must list at least one and at most eight endpoints;
+  every entry is a back-off plus a 40-second timeout when the mirrors are down.
+- A refused URL is never echoed; a refused scheme is quoted with at most 40
+  visible characters.
 
 ## `ORS_API_KEY` handling
 

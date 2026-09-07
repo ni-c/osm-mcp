@@ -225,11 +225,16 @@ export class HttpClient {
       redirect: 'error',
       signal: AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS),
     });
-    const text = await readBodyCapped(response, service);
-
+    // Status first. The body of an error answer is read under its own, much
+    // smaller ceiling that cuts instead of refusing: a 5xx with a body past
+    // the data cap used to surface as a size error — a plain Error with no
+    // status — so the Overpass mirror failover and the 429 hint, both keyed
+    // on the status, never saw it.
     if (!response.ok) {
-      throw new OsmApiError(response.status, text, service, url);
+      const body = await readErrorBody(response);
+      throw new OsmApiError(response.status, body, service, url);
     }
+    const text = await readBodyCapped(response, service);
 
     let data: unknown = text;
     const contentType = response.headers.get('content-type') ?? '';
@@ -283,6 +288,43 @@ async function readBodyCapped(
   return text + decoder.decode();
 }
 
+/** Ceiling on what is read of an error body; the rest is cut, never refused. */
+const MAX_ERROR_BODY_BYTES = 64 * 1024;
+
+/**
+ * Reads the body of a non-2xx answer up to MAX_ERROR_BODY_BYTES and drops the
+ * rest. Nothing downstream needs more — `sanitizeErrorBody` shows at most
+ * 2000 characters of it — and an error body is the one an upstream gets to
+ * choose freely, so its size must not decide what kind of error this is.
+ */
+async function readErrorBody(response: Response): Promise<string> {
+  if (!response.body) {
+    return response.text();
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > MAX_ERROR_BODY_BYTES) {
+        const keep = value.byteLength - (received - MAX_ERROR_BODY_BYTES);
+        text += decoder.decode(value.subarray(0, keep), { stream: true });
+        await reader.cancel();
+        return text + decoder.decode();
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+  } catch {
+    // A body that fails half-way is still an error answer with that status;
+    // what was read so far is all the detail there is.
+  }
+  return text + decoder.decode();
+}
+
 function looksLikeJson(text: string): boolean {
   const trimmed = text.trimStart();
   return trimmed.startsWith('{') || trimmed.startsWith('[');
@@ -319,6 +361,26 @@ const UNSAFE_CHARS =
  * to concatenate, and a promise that only holds because of what the caller does
  * afterwards is not one.
  */
+/**
+ * A fragment of text the upstream wrote, made safe for an error message: a
+ * string only (anything else is described, not printed), control characters
+ * stripped, cut to `max` characters and labelled as what it is. OSRM's
+ * `code`/`message` fields used to go into the message verbatim and unbounded
+ * — an 8 MB answer was 8 MB in the model context, with nothing saying whose
+ * words those were.
+ */
+export function upstreamText(value: unknown, max = 200): string {
+  if (typeof value !== 'string') {
+    return value === undefined || value === null
+      ? '(none)'
+      : `(non-text value of type ${typeof value})`;
+  }
+  const cleaned = redactUrl(value.replace(UNSAFE_CHARS, '').trim());
+  const cut =
+    cleaned.length > max ? `${cleaned.slice(0, max)}… (truncated)` : cleaned;
+  return `(untrusted text from the service) ${cut}`;
+}
+
 export function sanitizeErrorBody(body: string): string {
   const trimmed = redactUrl(body.replace(UNSAFE_CHARS, '').trim());
   // Anything markup-shaped: a reverse proxy's error page or a WAF block page.

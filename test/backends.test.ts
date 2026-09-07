@@ -140,7 +140,7 @@ describe('OsrmBackend', () => {
     stubFetch(() => jsonResponse({ code: 'NoRoute', message: 'nope' }));
     const backend = new OsrmBackend(http(), config, noWait());
     await expect(backend.route('car', [trier, lux])).rejects.toThrow(
-      /NoRoute — nope/
+      /code: .*NoRoute.*message: .*nope/
     );
   });
 
@@ -311,7 +311,9 @@ describe('ValhallaBackend', () => {
 });
 
 describe('OrsBackend', () => {
-  const withKey = loadConfig({ ORS_API_KEY: 'k' } as NodeJS.ProcessEnv);
+  const withKey = loadConfig({
+    ORS_API_KEY: 'test-key-0123456789',
+  } as NodeJS.ProcessEnv);
 
   it('is disabled without a key', () => {
     expect(new OrsBackend(http(), config).enabled).toBe(false);
@@ -339,7 +341,9 @@ describe('OrsBackend', () => {
     expect(url).toBe(
       'https://api.openrouteservice.org/v2/directions/foot-walking'
     );
-    expect((init.headers as Record<string, string>).Authorization).toBe('k');
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      'test-key-0123456789'
+    );
     expect(JSON.parse(String(init.body))).toEqual({
       coordinates: [
         [6.6439, 49.7596],

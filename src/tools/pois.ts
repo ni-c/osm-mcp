@@ -40,43 +40,31 @@ const CORE_TAGS = [
   'wheelchair',
 ] as const;
 
-function coreTags(poi: Poi): Record<string, string> {
-  const tags: Record<string, string> = {};
+/**
+ * The handful of tags a list entry shows. Values are already strings bounded
+ * to `MAX_TAG_VALUE_LENGTH` — the Overpass backend shapes every tag set on
+ * the way in, so this is a selection, not a second sanitiser.
+ */
+function coreTags(item: Poi): Record<string, string> {
+  const entries: Array<[string, string]> = [];
   for (const key of CORE_TAGS) {
-    const value = poi.tags[key];
-    // Same value budget as capTags: this is the higher-volume path (up to 25
-    // results per call), so it must not carry unbounded tag values either.
-    if (value) {
-      tags[key] =
-        value.length > MAX_TAG_VALUE_LENGTH
-          ? `${value.slice(0, MAX_TAG_VALUE_LENGTH)}… (truncated)`
-          : value;
-    }
+    const value = item.tags[key];
+    if (value) entries.push([key, value]);
   }
-  return tags;
+  return Object.fromEntries(entries);
 }
 
 const OSM_ID = /^(node|way|relation)\/(\d{1,12})$/;
 
 /** Response budget for poi_details: mega-relations carry hundreds of tags. */
 const MAX_DETAIL_TAGS = 60;
-const MAX_TAG_VALUE_LENGTH = 500;
 
 function capTags(tags: Record<string, string>): {
   tags: Record<string, string>;
   tags_truncated?: string;
 } {
   const entries = Object.entries(tags);
-  const capped = Object.fromEntries(
-    entries
-      .slice(0, MAX_DETAIL_TAGS)
-      .map(([key, value]) => [
-        key,
-        value.length > MAX_TAG_VALUE_LENGTH
-          ? `${value.slice(0, MAX_TAG_VALUE_LENGTH)}… (truncated)`
-          : value,
-      ])
-  );
+  const capped = Object.fromEntries(entries.slice(0, MAX_DETAIL_TAGS));
   return {
     tags: capped,
     ...(entries.length > MAX_DETAIL_TAGS
@@ -130,10 +118,10 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
         results: z.array(poi),
       }),
     },
-    async ({ near, category, radius_m, limit, language }) =>
+    async ({ near, category, radius_m, limit, language: lang }) =>
       run(async () => {
         const selector = resolveCategory(category);
-        const center = await deps.resolver.resolve(near, language);
+        const center = await deps.resolver.resolve(near, lang);
         const max = limit ?? 10;
         // Overpass's own limit is applied before sorting, so fetch a few more
         // and cut after sorting by distance.
@@ -144,8 +132,11 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
           Math.min(100, max * 4)
         );
         const sorted = pois
-          .map((poi) => ({ poi, meters: haversineMeters(center, poi) }))
-          .sort((a, b) => a.meters - b.meters)
+          .map((found) => ({
+            poi: found,
+            meters: haversineMeters(center, found),
+          }))
+          .toSorted((a, b) => a.meters - b.meters)
           .slice(0, max);
         return untrustedResult({
           near: center.label,
@@ -156,13 +147,13 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
                 note: 'Nothing found — try a larger radius_m or another category.',
               }
             : {}),
-          results: sorted.map(({ poi, meters }) => ({
-            name: poi.name,
+          results: sorted.map(({ poi: found, meters }) => ({
+            name: found.name,
             distance: formatDistance(meters),
-            lat: poi.lat,
-            lon: poi.lon,
-            osm: poi.osm,
-            ...coreTags(poi),
+            lat: found.lat,
+            lon: found.lon,
+            osm: found.osm,
+            ...coreTags(found),
           })),
         });
       })
@@ -208,19 +199,17 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
         if (!element) {
           throw new Error(`no OSM element found for ${osm_id}`);
         }
-        const lat = element.lat ?? element.center?.lat;
-        const lon = element.lon ?? element.center?.lon;
         return untrustedResult({
           osm: osm_id,
-          name: element.tags?.name ?? '(unnamed)',
-          ...(lat !== undefined && lon !== undefined
+          name: element.tags.name ?? '(unnamed)',
+          ...(element.lat !== undefined && element.lon !== undefined
             ? {
-                lat: roundCoord(lat),
-                lon: roundCoord(lon),
+                lat: element.lat,
+                lon: element.lon,
                 map: `https://www.openstreetmap.org/${osm_id}`,
               }
             : {}),
-          ...capTags(element.tags ?? {}),
+          ...capTags(element.tags),
         });
       })
   );
@@ -279,11 +268,17 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
           .optional(),
       }),
     },
-    async ({ locations, profile, venue_category, search_radius_m, language }) =>
+    async ({
+      locations,
+      profile,
+      venue_category,
+      search_radius_m,
+      language: lang,
+    }) =>
       run(async () => {
         const mode = profile ?? 'foot';
         const selector = resolveCategory(venue_category ?? 'cafe');
-        const origins = await deps.resolver.resolveAll(locations, language);
+        const origins = await deps.resolver.resolveAll(locations, lang);
         const midpoint = {
           lat: origins.reduce((sum, p) => sum + p.lat, 0) / origins.length,
           lon: origins.reduce((sum, p) => sum + p.lon, 0) / origins.length,
@@ -296,8 +291,11 @@ export function registerPoiTools(server: McpServer, deps: Deps): void {
             30
           )
         )
-          .map((poi) => ({ poi, meters: haversineMeters(midpoint, poi) }))
-          .sort((a, b) => a.meters - b.meters)
+          .map((found) => ({
+            poi: found,
+            meters: haversineMeters(midpoint, found),
+          }))
+          .toSorted((a, b) => a.meters - b.meters)
           .slice(0, 8)
           .map((entry) => entry.poi);
         if (venues.length === 0) {

@@ -34,7 +34,7 @@ async function toolNames(env: Record<string, string> = {}): Promise<string[]> {
     server.connect(serverTransport),
   ]);
   const { tools } = await client.listTools();
-  return tools.map((t) => t.name).sort();
+  return tools.map((t) => t.name).toSorted();
 }
 
 afterEach(() => {
@@ -46,7 +46,7 @@ describe('the catalogue', () => {
   // This is what lets the filter validate a name before anything is registered.
   // If it drifts from the code, every error message drifts too.
   it('is exactly the set of tools the server registers', async () => {
-    expect(await toolNames()).toEqual([...ALL_TOOLS].sort());
+    expect(await toolNames()).toEqual([...ALL_TOOLS].toSorted());
   });
 
   it('holds names the env-var syntax cannot misread', () => {
@@ -92,18 +92,18 @@ describe('selecting tools', () => {
 
   it('selects the curated set for "essential"', async () => {
     expect(await toolNames({ OSM_ALLOW_TOOLS: 'essential' })).toEqual(
-      [...ESSENTIAL_TOOLS].sort()
+      [...ESSENTIAL_TOOLS].toSorted()
     );
   });
 
   it('lets the preset compose with extra names', async () => {
     expect(await toolNames({ OSM_ALLOW_TOOLS: 'essential,isochrone' })).toEqual(
-      [...ESSENTIAL_TOOLS, 'isochrone'].sort()
+      [...ESSENTIAL_TOOLS, 'isochrone'].toSorted()
     );
   });
 
   it('leaves an unconfigured server untouched', async () => {
-    expect(await toolNames()).toEqual([...ALL_TOOLS].sort());
+    expect(await toolNames()).toEqual([...ALL_TOOLS].toSorted());
   });
 });
 

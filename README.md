@@ -270,7 +270,10 @@ under their usage policies.
 - OSM-sourced content (names, addresses, tags) is marked as untrusted data in
   tool results so the model treats it as data, not instructions.
 - Upstream error bodies are truncated and HTML error pages dropped before they
-  reach the model context.
+  reach the model context; the HTTP status is decided before a body is read.
+- Every value a service answers is shaped before it reaches a result: finite
+  numbers, bounded strings, one malformed element dropped rather than the
+  whole listing.
 - Redirects are never followed; all requests time out.
 
 ## Documentation

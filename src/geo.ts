@@ -5,9 +5,10 @@ export interface LatLon {
 
 const EARTH_RADIUS_M = 6_371_000;
 
+const toRad = (deg: number): number => (deg * Math.PI) / 180;
+
 /** Great-circle distance in meters (Haversine). */
 export function haversineMeters(a: LatLon, b: LatLon): number {
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
   const dLon = toRad(b.lon - a.lon);
   const sinLat = Math.sin(dLat / 2);
@@ -97,10 +98,13 @@ export function flattenCoordinates(coordinates: unknown): LatLon[] {
   const points: LatLon[] = [];
   const walk = (node: unknown): void => {
     if (!Array.isArray(node)) return;
+    // On the globe, not merely numeric: JSON `1e999` parses to Infinity, and
+    // one such point would make the bounding box fail the output schema.
     if (
       node.length >= 2 &&
       typeof node[0] === 'number' &&
-      typeof node[1] === 'number'
+      typeof node[1] === 'number' &&
+      isValidLatLon(node[1], node[0])
     ) {
       if (points.length >= MAX_CONTOUR_POINTS) {
         throw new Error(
@@ -149,5 +153,9 @@ export function boundingBoxOf(points: readonly LatLon[]): BoundingBox {
     if (point.lon > east) east = point.lon;
     if (point.lon < west) west = point.lon;
   }
-  return { north, south, east, west };
+  // `+ 0` folds -0 into 0. A contour on the equator or the meridian can carry
+  // both spellings, `>`/`<` keep whichever came first, and -0 serialises as
+  // `0` in the text block while `structuredContent` keeps the sign — the two
+  // channels of one answer would differ.
+  return { north: north + 0, south: south + 0, east: east + 0, west: west + 0 };
 }

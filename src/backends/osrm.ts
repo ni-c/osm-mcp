@@ -1,6 +1,15 @@
 import type { Config } from '../config.js';
-import { HttpClient, RateLimiter } from '../http.js';
+import { HttpClient, RateLimiter, upstreamText } from '../http.js';
 import type { LatLon } from '../geo.js';
+import {
+  arrayOf,
+  measure,
+  MAX_NAME_LENGTH,
+  nonNegativeInteger,
+  numberMatrix,
+  objectOf,
+  text,
+} from '../shape.js';
 
 export type Profile = 'foot' | 'car' | 'bike';
 
@@ -49,19 +58,11 @@ export interface OsrmTrip {
   legs: OsrmLeg[];
 }
 
-interface RawRoute {
-  distance: number;
-  duration: number;
-  legs?: Array<{
-    distance: number;
-    duration: number;
-    summary?: string;
-    steps?: Array<{
-      distance: number;
-      name?: string;
-      maneuver?: { type?: string; modifier?: string };
-    }>;
-  }>;
+/** A route or trip after shaping: the two numbers every answer needs, and the legs as sent. */
+interface ShapedRoute {
+  distanceMeters: number;
+  durationSeconds: number;
+  rawLegs: unknown[];
 }
 
 /** OSRM demo instance operated by FOSSGIS — max 1 request/second, fair use. */
@@ -92,18 +93,22 @@ export class OsrmBackend {
       alternatives: 'false',
       steps: includeSteps ? 'true' : 'false',
     });
-    const data = (await this.http.request(
-      'osrm',
-      `${this.url(profile, 'route', coords)}?${params}`,
-      this.limiter
-    )) as { code?: string; message?: string; routes?: RawRoute[] };
-    const route = expectOk(data, 'route').routes?.[0];
-    if (!route) throw new Error('OSRM returned no route');
+    const data = expectOk(
+      await this.http.request(
+        'osrm',
+        `${this.url(profile, 'route', coords)}?${params}`,
+        this.limiter
+      ),
+      'route'
+    );
+    const raw = arrayOf(data.routes)[0];
+    if (raw === undefined) throw new Error('OSRM returned no route');
+    const route = shapeRoute(raw, 'route');
     return {
-      distanceMeters: route.distance,
-      durationSeconds: route.duration,
-      legs: toLegs(route),
-      ...(includeSteps ? { steps: toSteps(route) } : {}),
+      distanceMeters: route.distanceMeters,
+      durationSeconds: route.durationSeconds,
+      legs: toLegs(route.rawLegs),
+      ...(includeSteps ? { steps: toSteps(route.rawLegs) } : {}),
     };
   }
 
@@ -120,20 +125,17 @@ export class OsrmBackend {
       sources,
       destinations: dests,
     });
-    const data = (await this.http.request(
-      'osrm',
-      `${this.url(profile, 'table', coords)}?${params}`,
-      this.limiter
-    )) as {
-      code?: string;
-      message?: string;
-      durations?: (number | null)[][];
-      distances?: (number | null)[][];
-    };
-    expectOk(data, 'table');
+    const data = expectOk(
+      await this.http.request(
+        'osrm',
+        `${this.url(profile, 'table', coords)}?${params}`,
+        this.limiter
+      ),
+      'table'
+    );
     return {
-      durations: data.durations ?? [],
-      distances: data.distances ?? [],
+      durations: numberMatrix(data.durations),
+      distances: numberMatrix(data.distances),
     };
   }
 
@@ -149,66 +151,122 @@ export class OsrmBackend {
       source: 'first',
       ...(roundtrip ? {} : { destination: 'last' }),
     });
-    const data = (await this.http.request(
-      'osrm',
-      `${this.url(profile, 'trip', coords)}?${params}`,
-      this.limiter
-    )) as {
-      code?: string;
-      message?: string;
-      trips?: RawRoute[];
-      waypoints?: Array<{ waypoint_index: number }>;
-    };
-    const trip = expectOk(data, 'trip').trips?.[0];
-    if (!trip || !data.waypoints) throw new Error('OSRM returned no trip');
+    const data = expectOk(
+      await this.http.request(
+        'osrm',
+        `${this.url(profile, 'trip', coords)}?${params}`,
+        this.limiter
+      ),
+      'trip'
+    );
+    const raw = arrayOf(data.trips)[0];
+    const waypoints = arrayOf(data.waypoints);
+    if (raw === undefined || waypoints.length === 0) {
+      throw new Error('OSRM returned no trip');
+    }
+    const trip = shapeRoute(raw, 'trip');
     // waypoints[i].waypoint_index is input i's position in the optimized tour;
-    // invert it into "visit order" (order[k] = index of the k-th stop).
-    const order = data.waypoints
-      .map((wp, inputIndex) => ({ inputIndex, at: wp.waypoint_index }))
-      .sort((a, b) => a.at - b.at)
+    // invert it into "visit order" (order[k] = index of the k-th stop). The
+    // tour has to name every input exactly once, or the order is not one.
+    const positions = waypoints.map((wp) =>
+      nonNegativeInteger(objectOf(wp)?.waypoint_index)
+    );
+    if (
+      waypoints.length !== coords.length ||
+      new Set(positions).size !== coords.length ||
+      positions.some((at) => at === undefined || at >= coords.length)
+    ) {
+      throw new Error(
+        'OSRM returned a trip whose visiting order does not cover the stops'
+      );
+    }
+    const order = positions
+      .map((at, inputIndex) => ({ inputIndex, at: at as number }))
+      .toSorted((a, b) => a.at - b.at)
       .map((entry) => entry.inputIndex);
     return {
       order,
-      distanceMeters: trip.distance,
-      durationSeconds: trip.duration,
-      legs: toLegs(trip),
+      distanceMeters: trip.distanceMeters,
+      durationSeconds: trip.durationSeconds,
+      legs: toLegs(trip.rawLegs),
     };
   }
 }
 
-function expectOk<T extends { code?: string; message?: string }>(
-  data: T,
-  service: string
-): T {
-  if (data.code !== 'Ok') {
+/**
+ * OSRM's envelope: an object with `code: "Ok"`. Anything it says about a
+ * failure is the service's text and is quoted as such — cut, cleaned and
+ * labelled — rather than concatenated into the message as it arrived.
+ */
+function expectOk(data: unknown, service: string): Record<string, unknown> {
+  const envelope = objectOf(data);
+  if (!envelope) {
     throw new Error(
-      `OSRM ${service} failed: ${data.code ?? 'unknown'}${data.message ? ` — ${data.message}` : ''}`
+      `OSRM ${service} answered with something that is not a JSON object`
     );
   }
-  return data;
+  if (envelope.code !== 'Ok') {
+    const message =
+      envelope.message === undefined
+        ? ''
+        : `; message: ${upstreamText(envelope.message)}`;
+    throw new Error(
+      `OSRM ${service} failed — code: ${upstreamText(envelope.code, 40)}${message}`
+    );
+  }
+  return envelope;
 }
 
-function toLegs(route: RawRoute): OsrmLeg[] {
-  return (route.legs ?? []).map((leg) => ({
-    distanceMeters: leg.distance,
-    durationSeconds: leg.duration,
-    ...(leg.summary ? { summary: leg.summary } : {}),
-  }));
+/**
+ * The two numbers a route or trip answer cannot do without. A missing or
+ * non-finite one used to become `NaN`/`Infinity` in `distance_m`, which the
+ * output schema refuses — the whole call failed with a validation message
+ * instead of this sentence.
+ */
+function shapeRoute(raw: unknown, service: string): ShapedRoute {
+  const route = objectOf(raw);
+  const distance = measure(route?.distance);
+  const duration = measure(route?.duration);
+  if (!route || distance === undefined || duration === undefined) {
+    throw new Error(
+      `OSRM ${service} answered without a usable distance and duration`
+    );
+  }
+  return {
+    distanceMeters: distance,
+    durationSeconds: duration,
+    rawLegs: arrayOf(route.legs),
+  };
 }
 
-function toSteps(route: RawRoute): OsrmStep[] {
+function toLegs(rawLegs: unknown[]): OsrmLeg[] {
+  return rawLegs.map((raw) => {
+    const leg = objectOf(raw) ?? {};
+    const summary = text(leg.summary, MAX_NAME_LENGTH);
+    return {
+      distanceMeters: measure(leg.distance) ?? 0,
+      durationSeconds: measure(leg.duration) ?? 0,
+      ...(summary ? { summary } : {}),
+    };
+  });
+}
+
+function toSteps(rawLegs: unknown[]): OsrmStep[] {
   const steps: OsrmStep[] = [];
-  for (const leg of route.legs ?? []) {
-    for (const step of leg.steps ?? []) {
-      const kind = step.maneuver?.type ?? '';
-      if (kind === 'arrive' && !step.name) continue;
-      const direction = [step.maneuver?.type, step.maneuver?.modifier]
+  for (const rawLeg of rawLegs) {
+    for (const rawStep of arrayOf(objectOf(rawLeg)?.steps)) {
+      const step = objectOf(rawStep) ?? {};
+      const maneuver = objectOf(step.maneuver) ?? {};
+      const kind = text(maneuver.type, 40) ?? '';
+      const name = text(step.name, MAX_NAME_LENGTH) ?? '';
+      if (kind === 'arrive' && !name) continue;
+      const direction = [kind, text(maneuver.modifier, 40)]
         .filter(Boolean)
         .join(' ');
-      const name = step.name || '(unnamed road)';
+      const road = name || '(unnamed road)';
       steps.push({
-        instruction: direction ? `${direction} onto ${name}` : name,
-        distanceMeters: step.distance,
+        instruction: direction ? `${direction} onto ${road}` : road,
+        distanceMeters: measure(step.distance) ?? 0,
       });
     }
   }

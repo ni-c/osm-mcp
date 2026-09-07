@@ -55,12 +55,12 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
         results: z.array(place),
       }),
     },
-    async ({ query, provider, limit, language, countrycodes }) =>
+    async ({ query, provider, limit, language: lang, countrycodes }) =>
       run(async () => {
         const results = await deps.resolver.search(query, {
           ...(provider ? { provider } : {}),
           ...(limit !== undefined ? { limit } : {}),
-          ...(language ? { language } : {}),
+          ...(lang ? { language: lang } : {}),
           ...(countrycodes ? { countrycodes } : {}),
         });
         if (results.length === 0) {
@@ -91,12 +91,12 @@ export function registerGeocodingTools(server: McpServer, deps: Deps): void {
         note: z.string().optional().describe('Present when nothing was found.'),
       }),
     },
-    async ({ latitude, longitude, language }) =>
+    async ({ latitude, longitude, language: lang }) =>
       run(async () => {
         const result = await deps.nominatim.reverse(
           latitude,
           longitude,
-          language ?? 'en'
+          lang ?? 'en'
         );
         if (!result) {
           return untrustedResult({

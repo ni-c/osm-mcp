@@ -1,24 +1,16 @@
 import type { Config } from '../config.js';
 import { HttpClient, RateLimiter } from '../http.js';
 import { isValidLatLon, roundCoord } from '../geo.js';
+import {
+  arrayOf,
+  finiteNumber,
+  MAX_NAME_LENGTH,
+  nonNegativeInteger,
+  objectOf,
+  text,
+  truncate,
+} from '../shape.js';
 import type { GeocodeResult } from './nominatim.js';
-
-interface PhotonFeature {
-  geometry?: { coordinates?: [number, number] };
-  properties?: {
-    name?: string;
-    street?: string;
-    housenumber?: string;
-    postcode?: string;
-    city?: string;
-    state?: string;
-    country?: string;
-    osm_type?: string;
-    osm_id?: number;
-    osm_key?: string;
-    osm_value?: string;
-  };
-}
 
 const OSM_TYPE_NAMES: Record<string, string> = {
   N: 'node',
@@ -56,45 +48,69 @@ export class PhotonBackend {
         ? (options.language ?? 'en')
         : 'default',
     });
-    const data = (await this.http.request(
-      'photon',
-      `${this.config.photonUrl}/api?${params}`,
-      this.limiter
-    )) as { features?: PhotonFeature[] };
-    return (data.features ?? [])
-      .filter((f) => f.geometry?.coordinates?.length === 2)
-      .map((f) => toResult(f))
-      .filter((result) => isValidLatLon(result.lat, result.lon));
+    const data = objectOf(
+      await this.http.request(
+        'photon',
+        `${this.config.photonUrl}/api?${params}`,
+        this.limiter
+      )
+    );
+    return arrayOf(data?.features)
+      .map((feature) => toResult(feature))
+      .filter((result) => result !== null);
   }
 }
 
-function toResult(feature: PhotonFeature): GeocodeResult {
-  const [lon, lat] = feature.geometry!.coordinates!;
-  const p = feature.properties ?? {};
+/** One address part, as Photon wrote it, or nothing. */
+function part(value: unknown): string | undefined {
+  return text(value, MAX_NAME_LENGTH);
+}
+
+/** One GeoJSON feature as a result, or null without a usable coordinate. */
+function toResult(feature: unknown): GeocodeResult | null {
+  const f = objectOf(feature);
+  const coordinates = arrayOf(objectOf(f?.geometry)?.coordinates);
+  const lon = finiteNumber(coordinates[0]);
+  const lat = finiteNumber(coordinates[1]);
+  if (
+    !f ||
+    lat === undefined ||
+    lon === undefined ||
+    !isValidLatLon(lat, lon)
+  ) {
+    return null;
+  }
+  const p = objectOf(f.properties) ?? {};
+  const name = part(p.name) ?? part(p.street);
+  const postcode = part(p.postcode);
+  const city = part(p.city);
   const label = [
-    [p.name ?? p.street, p.housenumber].filter(Boolean).join(' '),
-    p.postcode && p.city ? `${p.postcode} ${p.city}` : p.city,
-    p.state,
-    p.country,
+    [name, part(p.housenumber)].filter(Boolean).join(' '),
+    postcode && city ? `${postcode} ${city}` : city,
+    part(p.state),
+    part(p.country),
   ]
     .filter(Boolean)
     .join(', ');
   const result: GeocodeResult = {
     lat: roundCoord(lat),
     lon: roundCoord(lon),
-    label: label || '(unnamed)',
+    label: truncate(label, MAX_NAME_LENGTH) || '(unnamed)',
   };
   // Object.hasOwn: osm_type comes from the upstream response — a plain index
   // lookup would resolve prototype keys like "constructor" to a function.
   const osmType =
-    p.osm_type && Object.hasOwn(OSM_TYPE_NAMES, p.osm_type)
+    typeof p.osm_type === 'string' && Object.hasOwn(OSM_TYPE_NAMES, p.osm_type)
       ? OSM_TYPE_NAMES[p.osm_type]
       : undefined;
-  if (osmType && p.osm_id !== undefined) {
-    result.osm = `${osmType}/${p.osm_id}`;
+  const osmId = nonNegativeInteger(p.osm_id);
+  if (osmType && osmId !== undefined) {
+    result.osm = `${osmType}/${osmId}`;
   }
-  if (p.osm_key && p.osm_value) {
-    result.kind = `${p.osm_key}/${p.osm_value}`;
+  const key = part(p.osm_key);
+  const value = part(p.osm_value);
+  if (key && value) {
+    result.kind = `${key}/${value}`;
   }
   return result;
 }

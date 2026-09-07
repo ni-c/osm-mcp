@@ -97,8 +97,10 @@ describe('server', () => {
 
   it('registers all eleven tools with an empty environment', async () => {
     const client = await connect();
-    const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual([...TOOLS].sort());
+    const names = (await client.listTools()).tools
+      .map((t) => t.name)
+      .toSorted();
+    expect(names).toEqual([...TOOLS].toSorted());
   });
 
   it('declares an output schema on every tool', async () => {
@@ -206,7 +208,7 @@ describe('server', () => {
         routes: [{ summary: { distance: 44_000, duration: 31_680 } }],
       })
     );
-    const client = await connect({ ORS_API_KEY: 'k' });
+    const client = await connect({ ORS_API_KEY: 'test-key-0123456789' });
     const result = await client.callTool({
       name: 'route',
       arguments: {

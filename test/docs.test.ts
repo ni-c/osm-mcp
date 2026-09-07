@@ -143,12 +143,14 @@ function marked(markdown: string, marker: RegExp): string[] {
 
 describe('the tool reference', () => {
   it('documents every tool and no tool that does not exist', () => {
-    expect(documentedTools(reference).sort()).toEqual([...ALL_TOOLS].sort());
+    expect(documentedTools(reference).toSorted()).toEqual(
+      [...ALL_TOOLS].toSorted()
+    );
   });
 
   it('marks exactly the essential preset', () => {
-    expect(marked(reference, /\*\*essential\*\*/).sort()).toEqual(
-      [...ESSENTIAL_TOOLS].sort()
+    expect(marked(reference, /\*\*essential\*\*/).toSorted()).toEqual(
+      [...ESSENTIAL_TOOLS].toSorted()
     );
   });
 });

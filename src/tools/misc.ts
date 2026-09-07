@@ -49,10 +49,10 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
         distance_m: z.number().int(),
       }),
     },
-    async ({ from, to, language }) =>
+    async ({ from, to, language: lang }) =>
       run(async () => {
-        const a = await deps.resolver.resolve(from, language);
-        const b = await deps.resolver.resolve(to, language);
+        const a = await deps.resolver.resolve(from, lang);
+        const b = await deps.resolver.resolve(to, lang);
         const meters = haversineMeters(a, b);
         return untrustedResult({
           from: a.label,
@@ -96,18 +96,18 @@ export function registerMiscTools(server: McpServer, deps: Deps): void {
         directions: z.string().optional().describe('Only for a from/to pair.'),
       }),
     },
-    async ({ place, from, to, profile, language }) =>
+    async ({ place, from, to, profile, language: lang }) =>
       run(async () => {
         if (place && !from && !to) {
-          const p = await deps.resolver.resolve(place, language);
+          const p = await deps.resolver.resolve(place, lang);
           return untrustedResult({
             place: p.label,
             marker: `https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}#map=17/${p.lat}/${p.lon}`,
           });
         }
         if (from && to && !place) {
-          const a = await deps.resolver.resolve(from, language);
-          const b = await deps.resolver.resolve(to, language);
+          const a = await deps.resolver.resolve(from, lang);
+          const b = await deps.resolver.resolve(to, lang);
           const engine = MAP_ENGINE[profile ?? 'foot']!;
           const route = encodeURIComponent(
             `${a.lat},${a.lon};${b.lat},${b.lon}`

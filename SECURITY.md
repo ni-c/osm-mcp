@@ -28,6 +28,25 @@ untrusted input: tool results carrying it are explicitly marked as data, not
 instructions, and upstream error bodies are truncated (HTML pages dropped)
 before they reach the model context.
 
+## What the services answer
+
+Every value a service answers is shaped before it reaches a result
+(`src/shape.ts`): a number is taken only when it is finite (JSON `1e999`
+parses to `Infinity`), a distance or duration only when it is non-negative and
+within a ceiling, a string only when it is one, and names, labels, road
+summaries, turn instructions and tag keys are cut to a fixed length. An
+element the shaper refuses — a POI without a numeric coordinate, a geocoding
+hit whose coordinate is not a number — is dropped from a listing; a route
+without a usable distance is answered with a sentence. Neither reaches the
+output schema, whose violation would otherwise fail the whole call.
+
+The HTTP status is decided before the body is read. A non-2xx answer's body is
+read under a 64 KiB ceiling that cuts rather than refuses, so a mirror's error
+page cannot change what kind of error the failover and the rate-limit hint see.
+Text a service writes about a failure (OSRM's `code` and `message`) is quoted
+into the error result cut to 200 characters, stripped of control characters
+and labelled as untrusted text.
+
 ## The queries leave the house
 
 This is the property that separates this server from the rest of the family:
@@ -52,6 +71,15 @@ worth being precise about what is and is not checked.
 
 - `ORS_BASE_URL` must be `https://` whenever `ORS_API_KEY` is set. The server
   refuses to start otherwise rather than sending the key in the clear.
+- `ORS_API_KEY` must be 8 to 256 visible ASCII characters. The key travels in
+  an `Authorization` header, and a value the header cannot carry would be
+  quoted back by the HTTP layer's own error; the server refuses it first,
+  without echoing it.
+- `OVERPASS_BASE_URL` lists at least one and at most eight endpoints. Each
+  entry is a growing back-off plus a 40-second timeout when the mirrors are
+  down, so the list is a per-call budget.
+- A refused scheme is quoted with at most 40 visible characters: a
+  hexadecimal key with a colon after it is a valid URL whose scheme is the key.
 - Loopback addresses are recognised through `mcp-internal-hosts` — the same
   classifier the SSRF guards in this family use — so a locally hosted backend is
   not mistaken for a remote one written in an unusual form (`[::1]`,

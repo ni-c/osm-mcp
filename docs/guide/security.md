@@ -70,7 +70,21 @@ instructions**, so the model treats a POI named "ignore all previous
 instructions" as a badly named POI.
 
 Upstream error bodies get the same caution: they are truncated, and HTML error
-pages are dropped entirely before anything reaches the model context.
+pages are dropped entirely before anything reaches the model context. The HTTP
+status is decided before a body is read at all, and a non-2xx body is read
+under its own 64 KiB ceiling — so an error page of any size is still the
+status it came with, which is what the Overpass failover and the rate-limit
+hint are keyed on. Text a service writes about a failure (OSRM's `code` and
+`message`) is quoted cut to 200 characters, stripped of control characters and
+labelled as untrusted.
+
+Everything else a service answers is shaped before it reaches a result: a
+number is taken only when it is finite (JSON `1e999` parses to `Infinity`), a
+distance or duration only when it is non-negative and within a ceiling, a
+string only when it is one, and names, labels, road summaries, turn
+instructions and tag keys are cut to a fixed length. An element the shaper
+refuses is dropped from a listing rather than failing the whole call; a route
+without a usable distance is answered with a sentence.
 
 ## Network posture
 
