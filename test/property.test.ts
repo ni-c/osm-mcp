@@ -61,10 +61,18 @@ describe('distance behaves like a distance', () => {
       fc.property(point, point, point, (a, b, c) => {
         const direct = haversineMeters(a, c);
         const detour = haversineMeters(a, b) + haversineMeters(b, c);
-        // Relative tolerance: at antipodal distances the two sides differ by
-        // fractions of a metre out of twenty thousand kilometres, which is
-        // float arithmetic rather than a detour that is genuinely shorter.
-        expect(detour).toBeGreaterThanOrEqual(direct - direct * 1e-9 - 1e-6);
+        // Relative tolerance, because near the antipode the haversine formula
+        // is ill-conditioned and not by fractions of a millimetre: `a` goes to
+        // 1, so `atan2(√a, √(1-a))` divides by a square root of something the
+        // size of the machine epsilon, and the error in a single distance
+        // reaches R·√ε ≈ 9.5 cm. Measured, from the run that caught the old
+        // bound: the three points (0,0), (6.04e-7,0), (0,179.99999879) leave
+        // the detour 6.7 cm — 3.4e-9 relative — short of direct, so the
+        // previous 1e-9 was a factor of three too tight and failed whenever
+        // fast-check drew a nearly antipodal triple. 1e-7 clears three such
+        // evaluations with room to spare while staying far below the
+        // thousands of kilometres a sign error or a swapped lat/lon costs.
+        expect(detour).toBeGreaterThanOrEqual(direct - direct * 1e-7);
       }),
       RUNS
     );
