@@ -61,6 +61,11 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=high
 
+      # The base image pin and the note above it are one fact written twice,
+      # and a bump only ever rewrites one of them. This asserts the note still
+      # describes the pin, and that the major tag is still the LTS tag.
+      - run: .github/scripts/check-base-image-note.sh Dockerfile
+
   # `npm audit` checks the tree as it is; this checks the *change* a pull
   # request makes to it — a new dependency with a known advisory, or a licence
   # nobody agreed to — before it is in the tree at all.
