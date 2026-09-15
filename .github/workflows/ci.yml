@@ -95,10 +95,10 @@ jobs:
         with:
           persist-credentials: false
       # init and analyze must always move together — see the dependabot codeql group.
-      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           languages: javascript-typescript
-      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
 
   container-scan:
     needs: test
@@ -156,7 +156,7 @@ jobs:
       # codeql job, and it starts working by itself the day the repo goes public.
       # Fork pull requests are excluded for a different reason: their token is
       # read-only whatever this permissions block says.
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         # Every continuation line sits at the same indentation on purpose: a folded
         # scalar keeps the newline of a *more* indented line, and the expression
         # parser then rejects the workflow without naming a line.
