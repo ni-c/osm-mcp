@@ -5,7 +5,7 @@
 # What keeps this honest is a comparison, not a version number written down here:
 # `node:lts-alpine` and `node:24-alpine` MUST resolve to the same digest. The day
 # 24 leaves LTS they diverge, and that is visible; a hardcoded version in a comment
-# is not. Verified 2026-09-01: both resolve to the digest below, Node 24.20.0.
+# is not. Verified 2026-09-15: both resolve to the digest below, Node 24.21.0.
 # Refresh the digest and re-run that comparison together — a stale tag is
 # invisible if only the digest is re-resolved.
 FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS build
