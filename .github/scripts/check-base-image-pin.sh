@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 #
-# Checks that the note above the base image pin still describes the pin.
-#
-# The pin and the prose above it are one fact written twice, and a dependency
-# bot only ever rewrites one of them: it moves the digest and leaves the
-# comment claiming a Node version the image no longer has. Nothing fails when
-# that happens — the build is fine, the scan is fine — and the comment quietly
-# becomes a lie that the next reader believes.
+# Checks that the base image pin is still on the active LTS major.
 #
 # Every Dockerfile passed in is treated as one unit, because they are: a repo's
 # build stage, runtime stage and sidecar image all sit on the same base, and a
@@ -18,18 +12,21 @@
 #      digest. That is what makes "this is the ACTIVE LTS line" checkable
 #      rather than a version number somebody wrote down once. It is about the
 #      live tags, not the pin, and it fails the day the major leaves LTS.
-#   3. The Node version named in the note is the version in the pinned image.
-#      This is the half a digest bump breaks. The note only has to appear once
-#      across the files — it describes the shared pin, not one file.
+#   3. The pinned digest is an image of the major its own tag names. That is
+#      the half a hand-edited pin breaks: `node:24-alpine@<digest of 26>` reads
+#      as LTS and is not.
 #
-# The note's date is deliberately not checked: it scopes claim 2 to the day it
-# was made, and a date cannot be verified against anything.
+# Deliberately checked against the major and nothing finer. A patch version is
+# a fact with a shelf life of about a week — writing one into a comment means
+# every digest bump arrives red, which teaches everyone to merge past this
+# check rather than read it. The major is what carries the LTS claim, and it
+# survives every bump that is not a decision.
 #
 # Reads the registry over HTTP rather than pulling: the config blob carries
 # NODE_VERSION, and fetching a few hundred MB to run `node -v` is the same
 # answer for more money.
 #
-# Usage: check-base-image-note.sh Dockerfile [Dockerfile.other ...]
+# Usage: check-base-image-pin.sh Dockerfile [Dockerfile.other ...]
 
 set -euo pipefail
 
@@ -174,8 +171,7 @@ case "$rc" in
     ;;
 esac
 
-# Claim 3: the note names the Node version the pin actually has.
-claimed=$(grep -hoE 'Node [0-9]+\.[0-9]+\.[0-9]+' "$@" | head -1 | awk '{print $2}' || true)
+# Claim 3: the digest is an image of the major the tag names.
 rc=0
 actual=$(node_version "$digest") || rc=$?
 case "$rc" in
@@ -184,15 +180,13 @@ case "$rc" in
 *)
     if [ -z "$actual" ]; then
         bad "the pinned image carries no NODE_VERSION — is $digest a node image?"
-    elif [ -z "$claimed" ]; then
-        bad "the pin has no 'Node <x.y.z>' note to check (the pinned image is Node $actual)."
-        note "        The note above the FROM line is what makes the pin reviewable."
-    elif [ "$claimed" != "$actual" ]; then
-        bad "the note says Node $claimed, the pinned image is Node $actual."
-        note "        The digest moved and the note above it did not. Re-run the"
-        note "        comparison the note describes and write down what you found."
+    elif [ "${actual%%.*}" != "$major" ]; then
+        bad "the tag says node:$tag, the pinned digest is Node $actual."
+        note "        Pin and tag name different majors, so the tag is no longer"
+        note "        evidence of anything: claim 2 above checked node:$tag, and"
+        note "        that is not what this image is. Resolve the tag again."
     else
-        note "  ok  note and pinned image agree on Node $actual"
+        note "  ok  pinned digest is Node $actual, matching node:$tag"
     fi
     ;;
 esac
