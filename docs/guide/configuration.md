@@ -10,7 +10,7 @@ OpenStreetMap services. There is no config file and no command-line flag.
 | `NOMINATIM_BASE_URL` | `https://nominatim.openstreetmap.org`              | Geocoding / reverse geocoding                                      |
 | `PHOTON_BASE_URL`    | `https://photon.komoot.io`                         | Typo-tolerant geocoding                                            |
 | `OSRM_BASE_URL`      | `https://routing.openstreetmap.de`                 | Routing, matrices, trip optimization (FOSSGIS layout)              |
-| `OVERPASS_BASE_URL`  | `https://overpass-api.de/…,https://overpass.private.coffee/…` | Comma-separated Overpass endpoints, tried in order      |
+| `OVERPASS_BASE_URL`  | `https://overpass-api.de/…,https://lz4.overpass-api.de/…` | Comma-separated Overpass endpoints, tried in order      |
 | `VALHALLA_BASE_URL`  | `https://valhalla1.openstreetmap.de`               | Isochrones                                                         |
 | `ORS_API_KEY`        | —                                                  | Optional OpenRouteService key (the only secret)                    |
 | `ORS_BASE_URL`       | `https://api.openrouteservice.org`                 | OpenRouteService endpoint                                          |

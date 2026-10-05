@@ -15,7 +15,7 @@ describe('loadConfig', () => {
     expect(config.valhallaUrl).toBe('https://valhalla1.openstreetmap.de');
     expect(config.overpassUrls).toEqual([
       'https://overpass-api.de/api/interpreter',
-      'https://overpass.private.coffee/api/interpreter',
+      'https://lz4.overpass-api.de/api/interpreter',
     ]);
     expect(config.orsApiKey).toBeUndefined();
     expect(config.cacheTtlMs).toBe(3_600_000);

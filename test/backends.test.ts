@@ -206,9 +206,69 @@ describe('OverpassBackend', () => {
     );
     expect(urls).toEqual([
       'https://overpass-api.de/api/interpreter',
-      'https://overpass.private.coffee/api/interpreter',
+      'https://lz4.overpass-api.de/api/interpreter',
     ]);
     expect(pois[0]).toMatchObject({ name: 'X', osm: 'node/1' });
+  });
+
+  it('fails over to the mirror when an endpoint times out', async () => {
+    const urls: string[] = [];
+    stubFetch((url) => {
+      urls.push(url);
+      if (new URL(url).hostname === 'overpass-api.de') {
+        throw new DOMException(
+          'The operation was aborted due to timeout',
+          'TimeoutError'
+        );
+      }
+      return jsonResponse({
+        elements: [
+          { type: 'node', id: 1, lat: 49.75, lon: 6.64, tags: { name: 'X' } },
+        ],
+      });
+    });
+    const backend = new OverpassBackend(http(), config, noWait(), () =>
+      Promise.resolve()
+    );
+    const elements = await backend.query('[out:json];node(1);out;');
+    expect(urls).toEqual([
+      'https://overpass-api.de/api/interpreter',
+      'https://lz4.overpass-api.de/api/interpreter',
+    ]);
+    expect(elements).toHaveLength(1);
+  });
+
+  it('names the timeout when every endpoint times out', async () => {
+    const urls: string[] = [];
+    stubFetch((url) => {
+      urls.push(url);
+      throw new DOMException(
+        'The operation was aborted due to timeout',
+        'TimeoutError'
+      );
+    });
+    const backend = new OverpassBackend(http(), config, noWait(), () =>
+      Promise.resolve()
+    );
+    await expect(backend.query('[out:json];node(1);out;')).rejects.toThrow(
+      /all Overpass endpoints failed \(last: The operation was aborted due to timeout\)/
+    );
+    expect(urls).toHaveLength(2);
+  });
+
+  it('does not fail over on a network refusal', async () => {
+    const urls: string[] = [];
+    stubFetch((url) => {
+      urls.push(url);
+      throw new TypeError('fetch failed');
+    });
+    const backend = new OverpassBackend(http(), config, noWait(), () =>
+      Promise.resolve()
+    );
+    await expect(backend.query('[out:json];node(1);out;')).rejects.toThrow(
+      'fetch failed'
+    );
+    expect(urls).toHaveLength(1);
   });
 
   it('does not fail over on a client error', async () => {
