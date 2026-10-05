@@ -79,8 +79,11 @@ export class OverpassBackend {
           lastError = error;
           const status = error instanceof OsmApiError ? error.status : 0;
           // 429/504 = out of slots, 5xx = instance trouble: try the mirror.
-          // Anything else (bad query, network refusal) will not improve there.
-          if (status === 429 || status >= 500) continue;
+          // So is an interpreter that never answers — a timeout carries no
+          // status, and without this a hanging endpoint ended the walk before
+          // the next one was asked. Anything else (bad query, network
+          // refusal) will not improve there.
+          if (status === 429 || status >= 500 || isTimeout(error)) continue;
           throw error;
         }
       }
@@ -190,4 +193,9 @@ function toPoi(element: OverpassElement): Poi | null {
     name: element.tags.name ?? '(unnamed)',
     tags: element.tags,
   };
+}
+
+/** `AbortSignal.timeout` rejects with a `TimeoutError`, while fetching or while reading the body. */
+function isTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === 'TimeoutError';
 }

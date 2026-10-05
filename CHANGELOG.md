@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An Overpass endpoint that never answers now hands over to the next one. A
+  timeout carries no HTTP status, so the mirror walk, which keyed on 429/5xx,
+  gave up on the spot. And the default mirror `overpass.private.coffee` had
+  stopped answering, so whenever `overpass-api.de` was busy,
+  `find_nearby_pois` failed after 40 seconds. The weekly smoke run had been
+  red since 2026-09-14. The default list is now `overpass-api.de` followed by
+  `lz4.overpass-api.de`.
+
 - `haversineMeters` uses the `atan2` form instead of `asin(sqrt(h))`. `asin`
   is infinitely sensitive where its argument approaches 1, so at antipodal
   distances the rounding error grew to a tenth of a metre — enough for the

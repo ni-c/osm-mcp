@@ -37,7 +37,7 @@ const DEFAULTS = {
   PHOTON_BASE_URL: 'https://photon.komoot.io',
   OSRM_BASE_URL: 'https://routing.openstreetmap.de',
   OVERPASS_BASE_URL:
-    'https://overpass-api.de/api/interpreter,https://overpass.private.coffee/api/interpreter',
+    'https://overpass-api.de/api/interpreter,https://lz4.overpass-api.de/api/interpreter',
   VALHALLA_BASE_URL: 'https://valhalla1.openstreetmap.de',
   ORS_BASE_URL: 'https://api.openrouteservice.org',
 } as const;
