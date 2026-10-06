@@ -80,16 +80,20 @@ function clean(value: unknown): unknown {
   }
   if (Array.isArray(value)) return value.map(clean);
   if (value !== null && typeof value === 'object') {
-    // Object.fromEntries defines every key as an own property. A plain
-    // `out[key] = …` with a key of `__proto__` — a tag name any mapper can
-    // type — would set the prototype instead and drop the tag in silence.
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [
-        // The key too: an OSM tag name is as much a mapper's typing as its value.
-        redactSecrets(key).replace(UNSAFE_IN_DATA, ''),
-        clean(entry),
-      ])
-    );
+    // A key named `__proto__` is dropped, at every depth. The client parses
+    // `structuredContent` against the output schema, and zod builds objects by
+    // assignment, where that name sets a prototype and vanishes: a kept key
+    // would leave the two channels of one answer disagreeing. The check is on
+    // the cleaned name, so a control character inside it cannot smuggle it
+    // past. Object.fromEntries defines every other key as an own property.
+    const entries: [string, unknown][] = [];
+    for (const [key, entry] of Object.entries(value)) {
+      // The key too: an OSM tag name is as much a mapper's typing as its value.
+      const name = redactSecrets(key).replace(UNSAFE_IN_DATA, '');
+      if (name === '__proto__') continue;
+      entries.push([name, clean(entry)]);
+    }
+    return Object.fromEntries(entries);
   }
   return value;
 }
