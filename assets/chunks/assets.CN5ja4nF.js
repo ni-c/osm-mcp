@@ -1,0 +1,1 @@
+var e=`/demo.gif`;export{e as t};
