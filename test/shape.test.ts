@@ -122,7 +122,8 @@ describe('stringTags', () => {
 
   it('keeps a tag named __proto__ as an own property', () => {
     // Legal JSON, and a tag name any mapper can type. `tags[key] = value`
-    // would set the prototype instead and lose the tag in silence.
+    // would set the prototype instead and lose the tag in silence. This is an
+    // internal shaper; `clean()` in result.ts drops the key from every answer.
     const tags = stringTags(JSON.parse('{"__proto__": "x", "name": "a"}'));
     expect(Object.hasOwn(tags, '__proto__')).toBe(true);
     expect(Object.getPrototypeOf(tags)).toBe(Object.prototype);

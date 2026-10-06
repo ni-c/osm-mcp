@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 
 import { loadConfig } from '../src/config.js';
+import { jsonResult, untrustedResult } from '../src/result.js';
 import { createServer } from '../src/server.js';
 
 async function connect(env: Record<string, string> = {}): Promise<Client> {
@@ -612,11 +613,11 @@ describe('shaping what the backends answer', () => {
     expect(data.tags).toEqual({ name: 'a', ele: '137' });
   });
 
-  it('keeps a tag named __proto__', async () => {
+  it('drops a tag named __proto__ and answers the same in both channels', async () => {
     stubFetch(
       () =>
         new Response(
-          '{"elements":[{"type":"node","id":1,"lat":49.75,"lon":6.64,"tags":{"__proto__":"x","name":"a"}}]}',
+          '{"elements":[{"type":"node","id":1,"lat":49.75,"lon":6.64,"tags":{"__proto__":"x","__pro\\u0000to__":"y","name":"a"}}]}',
           { status: 200, headers: { 'content-type': 'application/json' } }
         )
     );
@@ -625,12 +626,16 @@ describe('shaping what the backends answer', () => {
       name: 'poi_details',
       arguments: { osm_id: 'node/1' },
     });
+    expect(result.isError).toBeFalsy();
     const tags = (result.structuredContent as { tags: Record<string, string> })
       .tags;
-    expect(Object.hasOwn(tags, '__proto__')).toBe(true);
+    expect(Object.hasOwn(tags, '__proto__')).toBe(false);
     expect(Object.getPrototypeOf(tags)).toBe(Object.prototype);
-    expect(parseJson<{ tags: Record<string, string> }>(result).tags.name).toBe(
-      'a'
+    expect(tags.name).toBe('a');
+    const text = firstText(result);
+    expect(text).not.toContain('__proto__');
+    expect(parseJson(result)).toEqual(
+      JSON.parse(JSON.stringify(result.structuredContent))
     );
   });
 
@@ -802,4 +807,24 @@ describe('shaping what the backends answer', () => {
     expect(firstText(result)).toContain('all Overpass endpoints failed');
     expect(firstText(result)).toContain('HTTP 502');
   }, 30_000);
+});
+
+describe('a __proto__ key in a result', () => {
+  it('is dropped at every depth and nothing else', () => {
+    const parsed = JSON.parse(
+      '{"__proto__": {"x": 1}, "__pro\\u0000to__": 2, "list": [{"__proto__": "x", "keep": 3}], "nest": {"__proto__": 4, "ok": 5}, "nil": {"__proto__": null}}'
+    ) as Record<string, unknown>;
+    for (const build of [jsonResult, untrustedResult]) {
+      const out = build(parsed).structuredContent as Record<string, unknown>;
+      expect(Object.hasOwn(out, '__proto__')).toBe(false);
+      expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+      expect(out).toMatchObject({
+        list: [{ keep: 3 }],
+        nest: { ok: 5 },
+        nil: {},
+      });
+      expect(Object.getPrototypeOf(out.nil)).toBe(Object.prototype);
+      expect(JSON.stringify(out)).not.toContain('__proto__');
+    }
+  });
 });

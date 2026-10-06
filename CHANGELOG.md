@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A tag or any other key named `__proto__` is dropped from every result, at every
+  depth. It used to be kept as an own property, but the client parses
+  `structuredContent` against the output schema, which loses that one key, so
+  the two channels of one answer could disagree. Both now omit it.
 - An Overpass endpoint that never answers now hands over to the next one. A
   timeout carries no HTTP status, so the mirror walk, which keyed on 429/5xx,
   gave up on the spot. And the default mirror `overpass.private.coffee` had
