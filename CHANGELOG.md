@@ -14,20 +14,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/ni-c/osm-mcp/compare/v0.3.2...HEAD
+
+## [0.3.2] - 2026-10-15
+
+### Security
+
+- A key in the path of a configured endpoint no longer reaches the model.
+  Paid Overpass services put their key there
+  (`https://…/<key>/api/interpreter`), and an error message quoted the whole
+  URL — `redactUrl` only knew `?key=` parameters. Error messages now name an
+  endpoint's scheme, host and port and nothing else, for every service, and
+  every path segment of eight characters or more of a configured base URL is
+  scrubbed from error bodies, in case an upstream echoes the request line.
+  Reported in [#47](https://github.com/ni-c/osm-mcp/issues/47).
+
 ### Fixed
 
+- The Overpass mirror walk moves on whenever the next endpoint has a chance.
+  It used to move on only for 429 and 5xx, so a 401 or 403 from a paid
+  endpoint with an expired key, a refused connection or a hanging interpreter
+  ended the walk on the spot. Now every failure but a malformed query, HTTP
+  status 400, hands over: any other HTTP error, a timeout, a network error,
+  and a query Overpass aborted itself — which it reports with HTTP 200 and a
+  `remark` saying `runtime error`, and which was answered as "nothing found"
+  and then cached for an hour. A 401 or 403 is also logged once to stderr. The
+  error after a failed walk names every endpoint by number and host with what
+  it answered, and only blames overload when some endpoint was busy.
+  ([#47](https://github.com/ni-c/osm-mcp/issues/47))
+- The walk shares one 50-second budget per call, so that two endpoints answer
+  before an MCP client gives up (60 seconds by default). It used to give every
+  endpoint 40 seconds — 81 seconds for the default pair. An endpoint now gets
+  between 20 and 40 seconds, the queries ask Overpass for a 20-second timeout
+  of their own instead of 25, and an endpoint that would start with less than
+  20 seconds left is not tried.
+- The default endpoints are `z.overpass-api.de` and `lz4.overpass-api.de`. The
+  community mirror `overpass.private.coffee` had stopped answering, which kept
+  the weekly smoke run red from 2026-09-14; and `overpass-api.de` is a DNS
+  round-robin over those same two machines, so failing over from it to one of
+  them could hit the machine that had just failed.
 - A tag or any other key named `__proto__` is dropped from every result, at every
   depth. It used to be kept as an own property, but the client parses
   `structuredContent` against the output schema, which loses that one key, so
   the two channels of one answer could disagree. Both now omit it.
-- An Overpass endpoint that never answers now hands over to the next one. A
-  timeout carries no HTTP status, so the mirror walk, which keyed on 429/5xx,
-  gave up on the spot. And the default mirror `overpass.private.coffee` had
-  stopped answering, so whenever `overpass-api.de` was busy,
-  `find_nearby_pois` failed after 40 seconds. The weekly smoke run had been
-  red since 2026-09-14. The default list is now `overpass-api.de` followed by
-  `lz4.overpass-api.de`.
-
 - `haversineMeters` uses the `atan2` form instead of `asin(sqrt(h))`. `asin`
   is infinitely sensitive where its argument approaches 1, so at antipodal
   distances the rounding error grew to a tenth of a metre — enough for the
@@ -37,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   antipodal triangles is now below a micrometre; distances change by
   fractions of a metre and are rounded before they are shown.
 
-[Unreleased]: https://github.com/ni-c/osm-mcp/compare/v0.3.1...HEAD
+[0.3.2]: https://github.com/ni-c/osm-mcp/compare/v0.3.1...v0.3.2
 
 ## [0.3.1] - 2026-09-07
 

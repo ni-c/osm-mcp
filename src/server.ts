@@ -11,7 +11,7 @@ import { PhotonBackend } from './backends/photon.js';
 import { ValhallaBackend } from './backends/valhalla.js';
 import type { Config } from './config.js';
 import type { Deps } from './deps.js';
-import { HttpClient } from './http.js';
+import { HttpClient, pathFragments } from './http.js';
 import { PlaceResolver } from './resolve.js';
 import { registerSecret } from './result.js';
 import { registerGeocodingTools } from './tools/geocoding.js';
@@ -51,7 +51,19 @@ export function createServer(config: Config): McpServer {
   // no matter which upstream echoed it.
   registerSecret(config.orsApiKey);
 
-  const http = new HttpClient(config.userAgent, config.cacheTtlMs);
+  const http = new HttpClient(
+    config.userAgent,
+    config.cacheTtlMs,
+    undefined,
+    pathFragments([
+      config.nominatimUrl,
+      config.photonUrl,
+      config.osrmUrl,
+      ...config.overpassUrls,
+      config.valhallaUrl,
+      config.orsUrl,
+    ])
+  );
   const nominatim = new NominatimBackend(http, config);
   const photon = new PhotonBackend(http, config);
   const deps: Deps = {

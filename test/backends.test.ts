@@ -7,7 +7,12 @@ import { OverpassBackend, parseTagSelector } from '../src/backends/overpass.js';
 import { PhotonBackend } from '../src/backends/photon.js';
 import { ValhallaBackend } from '../src/backends/valhalla.js';
 import { loadConfig } from '../src/config.js';
-import { HttpClient, RateLimiter } from '../src/http.js';
+import {
+  HttpClient,
+  OsmApiError,
+  RateLimiter,
+  type RequestOptions,
+} from '../src/http.js';
 
 const config = loadConfig({} as NodeJS.ProcessEnv);
 const noWait = () => new RateLimiter(0);
@@ -33,6 +38,7 @@ function stubFetch(handler: (url: string, init?: RequestInit) => Response) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('NominatimBackend', () => {
@@ -181,109 +187,457 @@ describe('OsrmBackend', () => {
   });
 });
 
+const Z = 'https://z.overpass-api.de/api/interpreter';
+const LZ4 = 'https://lz4.overpass-api.de/api/interpreter';
+const ONE_ELEMENT = {
+  elements: [
+    { type: 'node', id: 1, lat: 49.75, lon: 6.64, tags: { name: 'X' } },
+  ],
+};
+const TIMED_OUT =
+  'runtime error: Query timed out in "query" at line 1 after 21 seconds.';
+
+function many(n: number): string[] {
+  return Array.from(
+    { length: n },
+    (_, i) => `https://m${i + 1}.example/api/interpreter`
+  );
+}
+
+function overpassConfig(...urls: string[]) {
+  return loadConfig({
+    OVERPASS_BASE_URL: urls.join(','),
+  } as unknown as NodeJS.ProcessEnv);
+}
+
+function timeoutError(): DOMException {
+  return new DOMException(
+    'The operation was aborted due to timeout',
+    'TimeoutError'
+  );
+}
+
+function networkError(code?: string, message = 'fetch failed'): TypeError {
+  const cause = new Error(
+    code ? `getaddrinfo ${code} host` : 'unexpected redirect'
+  );
+  return new TypeError(message, {
+    cause: code ? Object.assign(cause, { code }) : cause,
+  });
+}
+
+function overpass(cfg = config, client = http()): OverpassBackend {
+  return new OverpassBackend(client, cfg, noWait(), () => Promise.resolve());
+}
+
+/** Fails the first endpoint with `first`, answers ONE_ELEMENT on every other. */
+function firstFails(first: () => Response) {
+  const urls: string[] = [];
+  stubFetch((url) => {
+    urls.push(url);
+    return urls.length === 1 ? first() : jsonResponse(ONE_ELEMENT);
+  });
+  return urls;
+}
+
 describe('OverpassBackend', () => {
-  it('fails over to the mirror on 429', async () => {
-    const urls: string[] = [];
-    stubFetch((url) => {
-      urls.push(url);
-      if (new URL(url).hostname === 'overpass-api.de') {
-        return new Response('too many', { status: 429 });
-      }
-      return jsonResponse({
-        elements: [
-          { type: 'node', id: 1, lat: 49.75, lon: 6.64, tags: { name: 'X' } },
-        ],
-      });
-    });
-    const backend = new OverpassBackend(http(), config, noWait(), () =>
-      Promise.resolve()
-    );
-    const pois = await backend.findNearby(
+  it('defaults to the two machines behind overpass-api.de, z first', async () => {
+    const urls = firstFails(() => new Response('too many', { status: 429 }));
+    const pois = await overpass().findNearby(
       { lat: 49.75, lon: 6.64 },
       { key: 'amenity', value: 'cafe' },
       500,
       10
     );
-    expect(urls).toEqual([
-      'https://overpass-api.de/api/interpreter',
-      'https://lz4.overpass-api.de/api/interpreter',
-    ]);
+    expect(urls).toEqual([Z, LZ4]);
     expect(pois[0]).toMatchObject({ name: 'X', osm: 'node/1' });
   });
 
-  it('fails over to the mirror when an endpoint times out', async () => {
-    const urls: string[] = [];
-    stubFetch((url) => {
-      urls.push(url);
-      if (new URL(url).hostname === 'overpass-api.de') {
-        throw new DOMException(
-          'The operation was aborted due to timeout',
-          'TimeoutError'
-        );
-      }
-      return jsonResponse({
-        elements: [
-          { type: 'node', id: 1, lat: 49.75, lon: 6.64, tags: { name: 'X' } },
-        ],
-      });
-    });
-    const backend = new OverpassBackend(http(), config, noWait(), () =>
-      Promise.resolve()
-    );
-    const elements = await backend.query('[out:json];node(1);out;');
-    expect(urls).toEqual([
-      'https://overpass-api.de/api/interpreter',
-      'https://lz4.overpass-api.de/api/interpreter',
-    ]);
-    expect(elements).toHaveLength(1);
+  it('asks the server for a 20-second query timeout', async () => {
+    const mock = stubFetch(() => jsonResponse(ONE_ELEMENT));
+    await overpass().byId('node', 1);
+    const body = decodeURIComponent(String(mock.mock.calls[0]![1]?.body));
+    expect(body).toContain('[out:json][timeout:20];node(1)');
   });
 
-  it('names the timeout when every endpoint times out', async () => {
-    const urls: string[] = [];
-    stubFetch((url) => {
-      urls.push(url);
-      throw new DOMException(
-        'The operation was aborted due to timeout',
-        'TimeoutError'
-      );
-    });
-    const backend = new OverpassBackend(http(), config, noWait(), () =>
-      Promise.resolve()
-    );
-    await expect(backend.query('[out:json];node(1);out;')).rejects.toThrow(
-      /all Overpass endpoints failed \(last: The operation was aborted due to timeout\)/
-    );
-    expect(urls).toHaveLength(2);
-  });
+  it.each([401, 403, 404, 408, 410, 429, 500, 502, 503, 504])(
+    'fails over on HTTP %i',
+    async (status) => {
+      const urls = firstFails(() => new Response('no', { status }));
+      expect(await overpass().query('[out:json];node(1);out;')).toHaveLength(1);
+      expect(urls).toEqual([Z, LZ4]);
+    }
+  );
 
-  it('does not fail over on a network refusal', async () => {
+  it('does not fail over on a bad query, and keeps its body', async () => {
     const urls: string[] = [];
     stubFetch((url) => {
       urls.push(url);
-      throw new TypeError('fetch failed');
+      return new Response('parse error', { status: 400 });
     });
-    const backend = new OverpassBackend(http(), config, noWait(), () =>
-      Promise.resolve()
-    );
-    await expect(backend.query('[out:json];node(1);out;')).rejects.toThrow(
-      'fetch failed'
-    );
+    await expect(overpass().query('malformed')).rejects.toMatchObject({
+      status: 400,
+      body: 'parse error',
+    });
     expect(urls).toHaveLength(1);
   });
 
-  it('does not fail over on a client error', async () => {
-    const urls: string[] = [];
-    stubFetch((url) => {
-      urls.push(url);
-      return new Response('bad query', { status: 400 });
-    });
-    const backend = new OverpassBackend(http(), config, noWait(), () =>
-      Promise.resolve()
+  it('surfaces the 400 when it follows a 504', async () => {
+    let call = 0;
+    stubFetch(
+      () => new Response('x', { status: (call += 1) === 1 ? 504 : 400 })
     );
-    await expect(backend.query('malformed')).rejects.toMatchObject({
+    await expect(overpass().query('malformed')).rejects.toMatchObject({
       status: 400,
     });
+  });
+
+  it('fails over when an endpoint times out', async () => {
+    const urls: string[] = [];
+    stubFetch((url) => {
+      urls.push(url);
+      if (url === Z) throw timeoutError();
+      return jsonResponse(ONE_ELEMENT);
+    });
+    expect(await overpass().query('[out:json];node(1);out;')).toHaveLength(1);
+    expect(urls).toEqual([Z, LZ4]);
+  });
+
+  it('fails over when an endpoint cannot be reached, and names the cause', async () => {
+    const urls: string[] = [];
+    stubFetch((url) => {
+      urls.push(url);
+      throw networkError('ENOTFOUND');
+    });
+    await expect(overpass().query('[out:json];node(1);out;')).rejects.toThrow(
+      'all Overpass endpoints failed (#1 https://z.overpass-api.de: unreachable (ENOTFOUND); ' +
+        '#2 https://lz4.overpass-api.de: unreachable (ENOTFOUND)). ' +
+        'No endpoint accepted the request — check OVERPASS_BASE_URL'
+    );
+    expect(urls).toEqual([Z, LZ4]);
+  });
+
+  it('fails over on a refused redirect, which has no error code', async () => {
+    let call = 0;
+    stubFetch(() => {
+      if ((call += 1) === 1) throw networkError();
+      throw networkError('ECONNREFUSED');
+    });
+    await expect(overpass().query('[out:json];node(1);out;')).rejects.toThrow(
+      '#1 https://z.overpass-api.de: unreachable (network error); ' +
+        '#2 https://lz4.overpass-api.de: unreachable (ECONNREFUSED)'
+    );
+  });
+
+  it('fails over when the connection drops half-way through the body', async () => {
+    const urls = firstFails(
+      () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"elem'));
+              controller.error(networkError('UND_ERR_SOCKET', 'terminated'));
+            },
+          }),
+          { status: 200 }
+        )
+    );
+    expect(await overpass().query('[out:json];node(1);out;')).toHaveLength(1);
+    expect(urls).toEqual([Z, LZ4]);
+  });
+
+  it('does not fail over on a TypeError without a cause (a bug, not the network)', async () => {
+    const urls: string[] = [];
+    stubFetch((url) => {
+      urls.push(url);
+      throw new TypeError('x is not a function');
+    });
+    await expect(overpass().query('[out:json];node(1);out;')).rejects.toThrow(
+      'x is not a function'
+    );
     expect(urls).toHaveLength(1);
+  });
+
+  it.each([
+    ['without elements', []],
+    ['with partial elements', ONE_ELEMENT.elements],
+  ])(
+    'fails over on a runtime error answered with 200, %s',
+    async (_, elements) => {
+      const urls: string[] = [];
+      stubFetch((url) => {
+        urls.push(url);
+        return url === Z
+          ? jsonResponse({ elements, remark: TIMED_OUT })
+          : jsonResponse({
+              elements: [ONE_ELEMENT.elements[0], ONE_ELEMENT.elements[0]],
+            });
+      });
+      expect(await overpass().query('[out:json];node(1);out;')).toHaveLength(2);
+      expect(urls).toEqual([Z, LZ4]);
+    }
+  );
+
+  it('reports the runtime error, cleaned and labelled, when every endpoint has one', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        elements: [],
+        remark: `${TIMED_OUT}\u001b[2J${'x'.repeat(500)}`,
+      })
+    );
+    const error = await overpass()
+      .query('[out:json];node(1);out;')
+      .then(
+        () => null,
+        (e: unknown) => e as Error
+      );
+    expect(error?.message).toContain(
+      `#1 https://z.overpass-api.de: Overpass reported (untrusted text from the service) ${TIMED_OUT}`
+    );
+    expect(error?.message).toContain('… (truncated)');
+    expect(error?.message).not.toContain('\u001b');
+    expect(error?.message).toContain('The public servers may be overloaded');
+  });
+
+  it.each([
+    ['a runtime remark', 'runtime remark: Timeout is 20 seconds.'],
+    ['a remark that is not text', 5],
+    ['an empty remark', ''],
+  ])('treats %s as success', async (_, remark) => {
+    const mock = stubFetch(() => jsonResponse({ ...ONE_ELEMENT, remark }));
+    expect(await overpass().query('[out:json];node(1);out;')).toHaveLength(1);
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it('never caches an answer that carries a runtime error', async () => {
+    let answer: unknown = { elements: [], remark: TIMED_OUT };
+    const mock = stubFetch(() => jsonResponse(answer));
+    const backend = overpass(config, new HttpClient('test/1.0', 60_000));
+    await expect(backend.query('[out:json];node(1);out;')).rejects.toThrow(
+      'runtime error'
+    );
+    expect(mock).toHaveBeenCalledTimes(2);
+    answer = ONE_ELEMENT;
+    expect(await backend.query('[out:json];node(1);out;')).toHaveLength(1);
+    expect(mock).toHaveBeenCalledTimes(3);
+    // A good answer is cached as before.
+    expect(await backend.query('[out:json];node(1);out;')).toHaveLength(1);
+    expect(mock).toHaveBeenCalledTimes(3);
+  });
+
+  it('numbers the endpoints and never prints a path or a key', async () => {
+    const keyA = 'aaaa1111bbbb2222cccc';
+    const keyB = 'dddd3333eeee4444ffff';
+    stubFetch(() => new Response('denied', { status: 403 }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = await overpass(
+      overpassConfig(
+        `https://paid.example/${keyA}/api/interpreter`,
+        `https://paid.example:8443/${keyB}/api/interpreter`
+      )
+    )
+      .query('[out:json];node(1);out;')
+      .then(
+        () => null,
+        (e: unknown) => e as Error
+      );
+    expect(error?.message).toBe(
+      'all Overpass endpoints failed (#1 https://paid.example: HTTP 403; ' +
+        '#2 https://paid.example:8443: HTTP 403). No endpoint accepted the request — ' +
+        'check OVERPASS_BASE_URL (addresses, keys) and the network.'
+    );
+    expect(error?.message).not.toMatch(/interpreter|aaaa1111|dddd3333/);
+  });
+
+  it('gives the overload hint as soon as one endpoint was busy', async () => {
+    let call = 0;
+    stubFetch(
+      () => new Response('x', { status: (call += 1) === 1 ? 403 : 504 })
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(overpass().query('[out:json];node(1);out;')).rejects.toThrow(
+      /HTTP 403; #2 https:\/\/lz4\.overpass-api\.de: HTTP 504\)\. The public servers may be overloaded/
+    );
+  });
+
+  describe('warns about a refused request', () => {
+    it('once per endpoint, naming only its origin', async () => {
+      const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+      stubFetch((url) =>
+        url.includes('paid')
+          ? new Response('no', { status: 401 })
+          : jsonResponse(ONE_ELEMENT)
+      );
+      const backend = overpass(
+        overpassConfig(
+          'https://paid.example/aaaa1111bbbb2222cccc/api/interpreter',
+          LZ4
+        )
+      );
+      await backend.query('[out:json];node(1);out;');
+      await backend.query('[out:json];node(2);out;');
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toBe(
+        'osm-mcp: WARNING: Overpass endpoint #1 (https://paid.example) refused the request with HTTP 401 — check its key'
+      );
+    });
+
+    it('once for each of two refusing endpoints', async () => {
+      const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+      stubFetch(() => new Response('no', { status: 403 }));
+      await expect(
+        overpass().query('[out:json];node(1);out;')
+      ).rejects.toThrow();
+      expect(warn).toHaveBeenCalledTimes(2);
+    });
+
+    it('never for an overloaded endpoint', async () => {
+      const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+      firstFails(() => new Response('busy', { status: 503 }));
+      await overpass().query('[out:json];node(1);out;');
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('time budget', () => {
+    type Outcome = 'hang' | 'busy' | 'ok';
+
+    /** A fake clock that the stubbed requests and back-offs advance. */
+    function rig(urls: string[], outcomes: Outcome[]) {
+      const state = { clock: 0 };
+      const timeouts: number[] = [];
+      const sleeps: number[] = [];
+      const request = vi.fn(
+        async (
+          _service: string,
+          _url: string,
+          _limiter: unknown,
+          options: RequestOptions
+        ) => {
+          const outcome = outcomes[timeouts.length] ?? 'ok';
+          timeouts.push(options.timeoutMs!);
+          if (outcome === 'hang') {
+            state.clock += options.timeoutMs!;
+            throw timeoutError();
+          }
+          if (outcome === 'busy') {
+            throw new OsmApiError(504, '', 'overpass', 'https://busy.example');
+          }
+          return ONE_ELEMENT;
+        }
+      );
+      const backend = new OverpassBackend(
+        { request } as unknown as HttpClient,
+        overpassConfig(...urls),
+        noWait(),
+        async (ms) => {
+          sleeps.push(ms);
+          state.clock += ms;
+        },
+        () => state.clock
+      );
+      return { backend, timeouts, sleeps, state, request };
+    }
+
+    it('gives a lone endpoint 40 s, not the whole 50 s budget', async () => {
+      const { backend, timeouts } = rig([Z], ['ok']);
+      await backend.query('q');
+      expect(timeouts).toEqual([40_000]);
+    });
+
+    it('splits the budget between the two default endpoints', async () => {
+      const { backend, timeouts, sleeps, state } = rig(
+        [Z, LZ4],
+        ['hang', 'hang']
+      );
+      await expect(backend.query('q')).rejects.toThrow(
+        '#1 https://z.overpass-api.de: no answer within 25 s; ' +
+          '#2 https://lz4.overpass-api.de: no answer within 24 s)'
+      );
+      expect(timeouts).toEqual([25_000, 24_000]);
+      expect(sleeps).toEqual([1000]);
+      expect(state.clock).toBe(50_000);
+    });
+
+    it('hands the full 40 s on when the first endpoint fails fast', async () => {
+      const { backend, timeouts } = rig([Z, LZ4], ['busy', 'ok']);
+      expect(await backend.query('q')).toHaveLength(1);
+      expect(timeouts).toEqual([25_000, 40_000]);
+    });
+
+    it('stops when the rest of the budget is below 20 s, and says how many were left out', async () => {
+      const { backend, timeouts } = rig(many(8), Array(8).fill('hang'));
+      await expect(backend.query('q')).rejects.toThrow(
+        '#3 to #8 not tried: time budget used up)'
+      );
+      expect(timeouts).toEqual([20_000, 20_000]);
+    });
+
+    it('starts an attempt with exactly 20 s left, and not with one millisecond less', async () => {
+      // The first endpoint answers 504 after `elapsed` ms; with the 1 s
+      // back-off, 29 s leave the second one exactly 20 s.
+      for (const [elapsed, tried] of [
+        [29_000, 2],
+        [29_001, 1],
+      ] as const) {
+        const { backend, timeouts, state, request } = rig([Z, LZ4], []);
+        request.mockImplementation(
+          async (
+            _s: string,
+            _u: string,
+            _l: unknown,
+            options: RequestOptions
+          ) => {
+            timeouts.push(options.timeoutMs!);
+            state.clock += timeouts.length === 1 ? elapsed : 0;
+            throw new OsmApiError(504, '', 'overpass', 'https://busy.example');
+          }
+        );
+        await expect(backend.query('q')).rejects.toThrow(
+          tried === 2 ? 'HTTP 504; #2' : '#2 not tried: time budget used up'
+        );
+        expect(timeouts).toEqual(tried === 2 ? [25_000, 20_000] : [25_000]);
+      }
+    });
+
+    it('does not sleep a back-off it has no time left to use', async () => {
+      const { backend, sleeps } = rig(many(3), ['hang', 'hang', 'hang']);
+      await backend.query('q').catch(() => {});
+      expect(sleeps).toEqual([1000]);
+    });
+
+    it('counts the wait for a free slot against the budget', async () => {
+      const { backend, timeouts, state, request } = rig([Z, LZ4], []);
+      const gates: Array<() => void> = [];
+      request.mockImplementation(
+        async (
+          _s: string,
+          _u: string,
+          _l: unknown,
+          options: RequestOptions
+        ) => {
+          timeouts.push(options.timeoutMs!);
+          if (gates.length < 2) {
+            await new Promise<void>((resolve) => gates.push(resolve));
+            return ONE_ELEMENT;
+          }
+          state.clock += options.timeoutMs!;
+          throw timeoutError();
+        }
+      );
+      const first = backend.query('a');
+      const second = backend.query('b');
+      const third = backend.query('c'); // waits for one of the two slots
+      await vi.waitFor(() => expect(gates).toHaveLength(2));
+      state.clock = 45_000;
+      gates.forEach((open) => open());
+      await Promise.all([first, second]);
+      await expect(third).rejects.toThrow(
+        '#1 https://z.overpass-api.de: no answer within 20 s; #2 not tried: time budget used up'
+      );
+      // Only 5 s of the budget were left: the one attempt gets the floor, no more.
+      expect(timeouts).toEqual([25_000, 25_000, 20_000]);
+    });
   });
 
   it('uses way/relation centers as coordinates', async () => {
@@ -299,10 +653,7 @@ describe('OverpassBackend', () => {
         ],
       })
     );
-    const backend = new OverpassBackend(http(), config, noWait(), () =>
-      Promise.resolve()
-    );
-    const pois = await backend.findNearby(
+    const pois = await overpass().findNearby(
       { lat: 49.7, lon: 6.6 },
       { key: 'tourism' },
       500,
