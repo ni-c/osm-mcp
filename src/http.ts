@@ -20,9 +20,40 @@ export class OsmApiError extends Error {
     public readonly service: string,
     url: string
   ) {
-    super(`${service} request to ${redactUrl(url)} failed with HTTP ${status}`);
+    super(
+      `${service} request to ${endpointOrigin(url)} failed with HTTP ${status}`
+    );
     this.name = 'OsmApiError';
   }
+}
+
+/** Scheme, host and port only — a path or query string can carry a key. */
+export function endpointOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '(unparseable URL)';
+  }
+}
+
+/** Minimum length of a configured path segment that is scrubbed from error bodies. */
+const MIN_PATH_FRAGMENT = 8;
+
+/** Configured path segments that could be a key, raw and decoded, for error-body scrubbing. */
+export function pathFragments(urls: readonly string[]): string[] {
+  const fragments = new Set<string>();
+  for (const url of urls) {
+    for (const segment of new URL(url).pathname.split('/')) {
+      if (segment.length < MIN_PATH_FRAGMENT) continue;
+      fragments.add(segment);
+      try {
+        fragments.add(decodeURIComponent(segment));
+      } catch {
+        // Malformed escape: the raw form is all there is.
+      }
+    }
+  }
+  return [...fragments];
 }
 
 /**
@@ -177,6 +208,8 @@ export interface RequestOptions {
   body?: string;
   /** Skip the response cache, e.g. for endpoints with volatile output. */
   noCache?: boolean;
+  /** A 2xx answer this refuses is returned but never cached. */
+  cacheable?: (data: unknown) => boolean;
   timeoutMs?: number;
 }
 
@@ -192,7 +225,9 @@ export class HttpClient {
   constructor(
     private readonly userAgent: string,
     cacheTtlMs: number,
-    cache?: TtlCache
+    cache?: TtlCache,
+    /** Configured path segments that may be keys; see {@link pathFragments}. */
+    private readonly secretFragments: readonly string[] = []
   ) {
     this.cache = cache ?? new TtlCache(cacheTtlMs);
   }
@@ -231,7 +266,7 @@ export class HttpClient {
     // status — so the Overpass mirror failover and the 429 hint, both keyed
     // on the status, never saw it.
     if (!response.ok) {
-      const body = await readErrorBody(response);
+      const body = this.scrub(await readErrorBody(response));
       throw new OsmApiError(response.status, body, service, url);
     }
     const text = await readBodyCapped(response, service);
@@ -245,10 +280,23 @@ export class HttpClient {
         data = text;
       }
     }
-    if (!options.noCache && text.length <= MAX_CACHEABLE_CHARS) {
+    if (
+      !options.noCache &&
+      text.length <= MAX_CACHEABLE_CHARS &&
+      (options.cacheable?.(data) ?? true)
+    ) {
       this.cache.set(cacheKey, data, text.length);
     }
     return data;
+  }
+
+  /** An upstream that echoes the request line would otherwise echo a key in the path. */
+  private scrub(body: string): string {
+    let out = body;
+    for (const fragment of this.secretFragments) {
+      out = out.replaceAll(fragment, '[redacted]');
+    }
+    return out;
   }
 }
 

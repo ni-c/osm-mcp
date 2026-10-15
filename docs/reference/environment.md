@@ -10,7 +10,7 @@ no command-line flag.
 | `NOMINATIM_BASE_URL` | no       | `https://nominatim.openstreetmap.org`                                                      | Geocoding / reverse geocoding                                                                        |
 | `PHOTON_BASE_URL`    | no       | `https://photon.komoot.io`                                                                 | Typo-tolerant geocoding                                                                              |
 | `OSRM_BASE_URL`      | no       | `https://routing.openstreetmap.de`                                                         | Routing, matrices, trip optimization. Must serve the `routed-{car,bike,foot}` path prefixes (FOSSGIS layout). |
-| `OVERPASS_BASE_URL`  | no       | `https://overpass-api.de/api/interpreter,https://lz4.overpass-api.de/api/interpreter`  | Comma-separated Overpass interpreter endpoints, tried in order on 429/5xx                            |
+| `OVERPASS_BASE_URL`  | no       | `https://z.overpass-api.de/api/interpreter,https://lz4.overpass-api.de/api/interpreter`  | Comma-separated Overpass interpreter endpoints, tried in order until one answers                            |
 | `VALHALLA_BASE_URL`  | no       | `https://valhalla1.openstreetmap.de`                                                       | Isochrones                                                                                           |
 | `ORS_API_KEY`        | no       | —                                                                                          | Optional [OpenRouteService](https://openrouteservice.org) key (secret). When set, routes, matrices and isochrones use ORS instead of OSRM/Valhalla. Free tier: 2 000 directions/day, 40/minute. |
 | `ORS_BASE_URL`       | no       | `https://api.openrouteservice.org`                                                         | OpenRouteService endpoint                                                                            |
@@ -46,7 +46,9 @@ More rules:
   control characters) — the shape an `Authorization` header can carry. A key
   that fails this is refused at startup without being echoed.
 - `OVERPASS_BASE_URL` must list at least one and at most eight endpoints;
-  every entry is a back-off plus a 40-second timeout when the mirrors are down.
+  the walk through them shares one 50-second budget per call. An endpoint may
+  carry a key in its path: error messages name only scheme and host, and the
+  path segments are scrubbed from error bodies.
 - A refused URL is never echoed; a refused scheme is quoted with at most 40
   visible characters.
 
@@ -64,7 +66,7 @@ they reach the model context.
 | ------------------------- | --------------------------- |
 | Rate limit, per service   | ~1 request/second (ORS: ~40/minute) |
 | Overpass concurrency      | 2 requests                  |
-| Request timeout           | 30 s (Overpass: 40 s)       |
+| Request timeout           | 30 s (Overpass: 20–40 s per endpoint, 50 s per call) |
 | HTTP redirects            | never followed              |
 | Cache size                | 500 entries, ≤ 1 MB each    |
 | Matrix size               | origins + destinations ≤ 25 |

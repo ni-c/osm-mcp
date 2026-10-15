@@ -436,6 +436,70 @@ describe('secret redaction', () => {
   });
 });
 
+describe('a key in an endpoint path', () => {
+  const KEY = 'k3y-0123456789abcdef';
+
+  it('never reaches the result, from the message or from an echoing body', async () => {
+    // A 400 is the one Overpass failure whose body is still shown.
+    stubFetch(
+      (url) =>
+        new Response(`bad query for ${new URL(url).pathname} (key ${KEY})`, {
+          status: 400,
+        })
+    );
+    const client = await connect({
+      OVERPASS_BASE_URL: `https://paid.example/${KEY}/api/interpreter`,
+    });
+    const result = await client.callTool({
+      name: 'poi_details',
+      arguments: { osm_id: 'node/1' },
+    });
+    expect(result.isError).toBe(true);
+    const text = firstText(result);
+    expect(text).toContain(
+      'overpass request to https://paid.example failed with HTTP 400'
+    );
+    expect(text).toContain('[redacted]');
+    expect(text).not.toContain(KEY);
+  });
+
+  it('stays out of the summary when every endpoint refuses', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    stubFetch(() => new Response(`no such key ${KEY}`, { status: 403 }));
+    const client = await connect({
+      OVERPASS_BASE_URL: `https://paid.example/${KEY}/api/interpreter,https://lz4.overpass-api.de/api/interpreter`,
+    });
+    const result = await client.callTool({
+      name: 'poi_details',
+      arguments: { osm_id: 'node/1' },
+    });
+    const text = firstText(result);
+    expect(text).toContain('#1 https://paid.example: HTTP 403');
+    expect(text).not.toContain(KEY);
+    vi.restoreAllMocks();
+  }, 30_000);
+
+  it('is scrubbed for the other services too', async () => {
+    stubFetch(
+      (url) =>
+        new Response(`unauthorized: ${new URL(url).pathname}`, { status: 401 })
+    );
+    const client = await connect({
+      NOMINATIM_BASE_URL: `https://geo.example/${KEY}`,
+    });
+    const result = await client.callTool({
+      name: 'geocode',
+      arguments: { query: 'Trier' },
+    });
+    expect(result.isError).toBe(true);
+    const text = firstText(result);
+    expect(text).toContain(
+      'nominatim request to https://geo.example failed with HTTP 401'
+    );
+    expect(text).not.toContain(KEY);
+  });
+});
+
 describe('control characters and BiDi overrides', () => {
   // Written as escapes because they are invisible in a source file.
   const RLO = '\u202e';

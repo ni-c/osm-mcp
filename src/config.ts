@@ -12,7 +12,7 @@ export interface Config {
    * segment inside the OSRM path itself is ignored by the demo servers.
    */
   osrmUrl: string;
-  /** Overpass interpreter endpoints, tried in order on 429/5xx. */
+  /** Overpass interpreter endpoints, tried in order on any failure but a bad query. */
   overpassUrls: string[];
   valhallaUrl: string;
   orsUrl: string;
@@ -37,7 +37,7 @@ const DEFAULTS = {
   PHOTON_BASE_URL: 'https://photon.komoot.io',
   OSRM_BASE_URL: 'https://routing.openstreetmap.de',
   OVERPASS_BASE_URL:
-    'https://overpass-api.de/api/interpreter,https://lz4.overpass-api.de/api/interpreter',
+    'https://z.overpass-api.de/api/interpreter,https://lz4.overpass-api.de/api/interpreter',
   VALHALLA_BASE_URL: 'https://valhalla1.openstreetmap.de',
   ORS_BASE_URL: 'https://api.openrouteservice.org',
 } as const;
@@ -45,12 +45,7 @@ const DEFAULTS = {
 /** Printable ASCII from `!` to `~`, the only characters a header value may hold. */
 const ORS_KEY_SHAPE = /^[!-~]{8,256}$/;
 
-/**
- * Ceiling on the Overpass mirror list. Every entry costs a growing back-off
- * plus a 40-second request timeout when the mirrors are down, so a list is a
- * per-call budget in disguise; two public interpreters is the default and
- * eight is more than anybody runs.
- */
+/** Ceiling on the Overpass mirror list; the walk shares one 50-second budget anyway. */
 const MAX_OVERPASS_ENDPOINTS = 8;
 
 /**

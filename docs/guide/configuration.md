@@ -10,7 +10,7 @@ OpenStreetMap services. There is no config file and no command-line flag.
 | `NOMINATIM_BASE_URL` | `https://nominatim.openstreetmap.org`              | Geocoding / reverse geocoding                                      |
 | `PHOTON_BASE_URL`    | `https://photon.komoot.io`                         | Typo-tolerant geocoding                                            |
 | `OSRM_BASE_URL`      | `https://routing.openstreetmap.de`                 | Routing, matrices, trip optimization (FOSSGIS layout)              |
-| `OVERPASS_BASE_URL`  | `https://overpass-api.de/…,https://lz4.overpass-api.de/…` | Comma-separated Overpass endpoints, tried in order      |
+| `OVERPASS_BASE_URL`  | `https://z.overpass-api.de/…,https://lz4.overpass-api.de/…` | Comma-separated Overpass endpoints, tried in order      |
 | `VALHALLA_BASE_URL`  | `https://valhalla1.openstreetmap.de`               | Isochrones                                                         |
 | `ORS_API_KEY`        | —                                                  | Optional OpenRouteService key (the only secret)                    |
 | `ORS_BASE_URL`       | `https://api.openrouteservice.org`                 | OpenRouteService endpoint                                          |
@@ -52,10 +52,25 @@ will not answer these paths. See the [FAQ](/guide/faq) for why this exists.
 :::
 
 `OVERPASS_BASE_URL` takes a **comma-separated list** of interpreter endpoints.
-They are tried in order: a 429 or 5xx from one endpoint fails over to the next,
-which is how the default configuration survives the main instance being busy.
-At least one and at most eight endpoints are accepted — each entry is a
-growing back-off plus a 40-second timeout when the mirrors are down.
+They are tried in order, and every failure except a malformed query (HTTP 400)
+moves on to the next one: any other HTTP error, a timeout, an endpoint that
+cannot be reached, and a query Overpass itself aborted (it reports that with
+HTTP 200 and a `remark`). The defaults are the two machines behind
+`overpass-api.de`, named one by one — the main name is a DNS round-robin over
+both, so a failover to it could land on the machine that just failed.
+
+The whole walk shares one 50-second budget per call, so that a list of two
+still answers before an MCP client gives up (the SDK's default is 60 seconds).
+An endpoint gets at most 40 seconds and at least 20 — the queries ask the
+server for a 20-second timeout of their own — and one that would start with
+less than that is not tried. At least one and at most eight endpoints are
+accepted.
+
+An endpoint may carry a key in its path, as paid Overpass services do. Error
+messages name only an endpoint's scheme and host, and every path segment of
+eight characters or more is scrubbed from error bodies. When an endpoint
+refuses a request with 401 or 403, the server says so once on stderr — an
+expired key would otherwise hand its load to the public servers unnoticed.
 
 ## `ORS_API_KEY`
 
@@ -99,7 +114,7 @@ Not configurable, deliberately:
 | Rate limit, per service       | ~1 request/second         | Nominatim and FOSSGIS policies ask for exactly that              |
 | ORS rate limit                | ~40 requests/minute       | The ORS free-tier per-minute quota                               |
 | Overpass concurrency          | 2 requests                | The public instance grants ~2 slots per IP                       |
-| Request timeout               | 30 s (Overpass: 40 s)     | A hung request would hang the tool call                          |
+| Request timeout               | 30 s (Overpass: 20–40 s, 50 s per call) | A hung request would hang the tool call                          |
 | HTTP redirects                | never followed            | A redirect would replay headers at whatever host it names        |
 | Matrix size                   | origins + destinations ≤ 25 | Stays within the public OSRM usage policy                      |
 | Turn-by-turn steps            | first 100                 | A continental route has tens of thousands of steps               |

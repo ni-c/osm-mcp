@@ -6,6 +6,7 @@ import {
   RateLimiter,
   Semaphore,
   TtlCache,
+  pathFragments,
   sanitizeErrorBody,
   upstreamText,
 } from '../src/http.js';
@@ -165,20 +166,62 @@ describe('HttpClient', () => {
     ).rejects.toMatchObject({ status: 429, service: 'nominatim' });
   });
 
-  it('redacts api_key query values in error messages', async () => {
+  it('names only the origin in error messages, never a path or a query', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response('no', { status: 500 }))
     );
     const http = new HttpClient('a', 0);
     const error = await http
-      .request('svc', 'https://example.com/x?api_key=SECRET&y=1', null)
+      .request(
+        'svc',
+        'https://example.com:8443/PATHKEY1234/x?api_key=SECRET&y=1',
+        null
+      )
       .then(
         () => null,
         (e: unknown) => e as OsmApiError
       );
-    expect(error?.message).not.toContain('SECRET');
-    expect(error?.message).toContain('[redacted]');
+    expect(error?.message).toBe(
+      'svc request to https://example.com:8443 failed with HTTP 500'
+    );
+  });
+
+  it('scrubs configured path fragments from an error body, and nothing else', async () => {
+    const KEY = '0123456789abcdef0123';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(`invalid key ${KEY} for POST /${KEY}/api/interpreter`, {
+          status: 401,
+        })
+      )
+    );
+    const fragments = pathFragments([
+      `https://paid.example/${KEY}/api/interpreter`,
+    ]);
+    const http = new HttpClient('a', 0, undefined, fragments);
+    const error = await http
+      .request('overpass', `https://paid.example/${KEY}/api/interpreter`, null)
+      .then(
+        () => null,
+        (e: unknown) => e as OsmApiError
+      );
+    expect(error?.body).toBe(
+      'invalid key [redacted] for POST /[redacted]/api/[redacted]'
+    );
+  });
+
+  it('caches a 2xx answer only when `cacheable` accepts it', async () => {
+    const fetchMock = vi.fn(async () => new Response('{"bad":true}'));
+    vi.stubGlobal('fetch', fetchMock);
+    const http = new HttpClient('a', 60_000);
+    const options = {
+      cacheable: (data: unknown) => !(data as { bad?: boolean }).bad,
+    };
+    await http.request('svc', 'https://example.com/x', null, options);
+    await http.request('svc', 'https://example.com/x', null, options);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('parses JSON served without a JSON content type', async () => {
@@ -190,6 +233,32 @@ describe('HttpClient', () => {
     expect(await http.request('svc', 'https://example.com/x', null)).toEqual({
       a: 1,
     });
+  });
+});
+
+describe('pathFragments', () => {
+  it('takes path segments of eight characters or more, raw and decoded', () => {
+    expect(
+      pathFragments([
+        'https://a.example/1234567/12345678/api',
+        'https://b.example/k%C3%A9y-12345',
+        'https://c.example',
+        'https://d.example/bad%E0%A4%A',
+      ])
+    ).toEqual(['12345678', 'k%C3%A9y-12345', 'kéy-12345', 'bad%E0%A4%A']);
+  });
+
+  it('finds nothing long but the interpreter path in the defaults', () => {
+    expect(
+      pathFragments([
+        'https://nominatim.openstreetmap.org',
+        'https://z.overpass-api.de/api/interpreter',
+      ])
+    ).toEqual(['interpreter']);
+  });
+
+  it('copes with an empty list', () => {
+    expect(pathFragments([])).toEqual([]);
   });
 });
 
@@ -274,7 +343,7 @@ describe('audit regressions', () => {
     void second;
   });
 
-  it('redacts token-style query parameters, not only api_key', async () => {
+  it('keeps a token-style query parameter out of the message', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response('no', { status: 500 }))

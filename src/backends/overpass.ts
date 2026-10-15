@@ -1,5 +1,12 @@
 import type { Config } from '../config.js';
-import { HttpClient, OsmApiError, RateLimiter, Semaphore } from '../http.js';
+import {
+  endpointOrigin,
+  HttpClient,
+  OsmApiError,
+  RateLimiter,
+  Semaphore,
+  upstreamText,
+} from '../http.js';
 import { isValidLatLon, roundCoord, type LatLon } from '../geo.js';
 import {
   arrayOf,
@@ -27,26 +34,52 @@ export interface Poi extends LatLon {
 
 const ELEMENT_TYPES = new Set(['node', 'way', 'relation']);
 
+/** The whole mirror walk, semaphore wait included; MCP SDK clients give up after 60 s. */
+const WALK_BUDGET_MS = 50_000;
+/** One endpoint never gets longer than this. */
+const MAX_ATTEMPT_MS = 40_000;
+/** Nor shorter: the queries' own server-side `[timeout:20]`. */
+const MIN_ATTEMPT_MS = 20_000;
+const QL_SETTINGS = '[out:json][timeout:20];';
+
+/** Overpass answers a query that failed at runtime with HTTP 200 and a `remark`. */
+export class OverpassRuntimeError extends Error {
+  constructor(remark: string) {
+    super(`Overpass reported ${upstreamText(remark, 120)}`);
+    this.name = 'OverpassRuntimeError';
+  }
+}
+
+interface Failure {
+  endpoint: string;
+  error: unknown;
+  timeoutMs: number;
+}
+
 /**
  * Overpass API. The public main instance grants ~2 concurrent slots per IP and
- * asks clients to back off on 429 — this backend caps concurrency, and on
- * 429/5xx fails over to the next configured mirror instead of hammering the
- * same server.
+ * asks clients to back off on 429 — this backend caps concurrency, and when an
+ * endpoint fails for any reason but a bad query it moves on to the next
+ * configured one, within one time budget for the whole walk.
  */
 export class OverpassBackend {
   private readonly semaphore = new Semaphore(2);
   private readonly limiter: RateLimiter;
   private readonly retryDelay: (ms: number) => Promise<void>;
+  private readonly now: () => number;
+  private readonly warned = new Set<string>();
 
   constructor(
     private readonly http: HttpClient,
     private readonly config: Config,
     limiter?: RateLimiter,
-    retryDelay?: (ms: number) => Promise<void>
+    retryDelay?: (ms: number) => Promise<void>,
+    now?: () => number
   ) {
     this.limiter = limiter ?? new RateLimiter(1100);
     this.retryDelay =
       retryDelay ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.now = now ?? (() => Date.now());
   }
 
   /**
@@ -54,48 +87,62 @@ export class OverpassBackend {
    * refuses (no type, no integer id) are dropped one by one, never the answer.
    */
   async query(ql: string): Promise<OverpassElement[]> {
+    const deadline = this.now() + WALK_BUDGET_MS;
     const release = await this.semaphore.acquire();
     try {
-      let lastError: unknown;
-      let attempt = 0;
-      for (const endpoint of this.config.overpassUrls) {
-        // Never walk the mirror list back-to-back — a failing burst across
-        // all public interpreters is exactly the pattern they ban clients for.
-        if (attempt > 0) await this.retryDelay(1000 * attempt);
-        attempt += 1;
+      const urls = this.config.overpassUrls;
+      const failures: Failure[] = [];
+      for (const [index, endpoint] of urls.entries()) {
+        if (index > 0) {
+          // Never walk the mirror list back-to-back — a failing burst across
+          // all public interpreters is exactly the pattern they ban clients for.
+          const delay = 1000 * index;
+          if (deadline - this.now() - delay < MIN_ATTEMPT_MS) {
+            throw walkError(failures, urls.length);
+          }
+          await this.retryDelay(delay);
+        }
+        const share = (deadline - this.now()) / (urls.length - index);
+        const timeoutMs = Math.floor(
+          Math.min(MAX_ATTEMPT_MS, Math.max(MIN_ATTEMPT_MS, share))
+        );
         try {
           const data = objectOf(
             await this.http.request('overpass', endpoint, this.limiter, {
               method: 'POST',
               headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
               body: `data=${encodeURIComponent(ql)}`,
-              timeoutMs: 40_000,
+              timeoutMs,
+              cacheable: (answer) => runtimeError(answer) === undefined,
             })
           );
+          const remark = runtimeError(data);
+          if (remark !== undefined) throw new OverpassRuntimeError(remark);
           return arrayOf(data?.elements)
             .map((element) => toElement(element))
             .filter((element) => element !== null);
         } catch (error) {
-          lastError = error;
-          const status = error instanceof OsmApiError ? error.status : 0;
-          // 429/504 = out of slots, 5xx = instance trouble: try the mirror.
-          // So is an interpreter that never answers — a timeout carries no
-          // status, and without this a hanging endpoint ended the walk before
-          // the next one was asked. Anything else (bad query, network
-          // refusal) will not improve there.
-          if (status === 429 || status >= 500 || isTimeout(error)) continue;
-          throw error;
+          if (!worthAnotherEndpoint(error)) throw error;
+          this.warnOnRefusal(index, endpoint, error);
+          failures.push({ endpoint, error, timeoutMs });
         }
       }
-      throw lastError instanceof Error
-        ? new Error(
-            `all Overpass endpoints failed (last: ${lastError.message}). ` +
-              'The public servers may be overloaded — wait ~30 seconds and retry.'
-          )
-        : lastError;
+      throw walkError(failures, urls.length);
     } finally {
       release();
     }
+  }
+
+  /** A paid endpoint with an expired key would otherwise hand its load to the public servers unnoticed. */
+  private warnOnRefusal(index: number, endpoint: string, error: unknown): void {
+    if (!(error instanceof OsmApiError)) return;
+    if (error.status !== 401 && error.status !== 403) return;
+    if (this.warned.has(endpoint)) return;
+    this.warned.add(endpoint);
+    console.error(
+      `osm-mcp: WARNING: Overpass endpoint #${index + 1} (${endpointOrigin(endpoint)}) ` +
+        `refused the request with HTTP ${error.status} — check its key`
+    );
   }
 
   async findNearby(
@@ -105,7 +152,7 @@ export class OverpassBackend {
     limit: number
   ): Promise<Poi[]> {
     const ql =
-      `[out:json][timeout:25];` +
+      QL_SETTINGS +
       `nwr${selectorToQl(selector)}(around:${Math.round(radiusMeters)},${center.lat},${center.lon});` +
       `out center tags ${limit};`;
     return (await this.query(ql))
@@ -117,7 +164,7 @@ export class OverpassBackend {
     type: 'node' | 'way' | 'relation',
     id: number
   ): Promise<OverpassElement | null> {
-    const ql = `[out:json][timeout:25];${type}(${id});out center tags;`;
+    const ql = `${QL_SETTINGS}${type}(${id});out center tags;`;
     const elements = await this.query(ql);
     return elements[0] ?? null;
   }
@@ -195,7 +242,68 @@ function toPoi(element: OverpassElement): Poi | null {
   };
 }
 
+/** Only a bad query (400) or a local failure is the same on every endpoint. */
+function worthAnotherEndpoint(error: unknown): boolean {
+  if (error instanceof OsmApiError) return error.status !== 400;
+  return (
+    isTimeout(error) ||
+    isNetworkFailure(error) ||
+    error instanceof OverpassRuntimeError
+  );
+}
+
 /** `AbortSignal.timeout` rejects with a `TimeoutError`, while fetching or while reading the body. */
 function isTimeout(error: unknown): boolean {
   return error instanceof Error && error.name === 'TimeoutError';
+}
+
+/** undici: `fetch failed` / `terminated`, always with the socket error as cause. */
+function isNetworkFailure(error: unknown): boolean {
+  return error instanceof TypeError && error.cause !== undefined;
+}
+
+function runtimeError(answer: unknown): string | undefined {
+  const remark = objectOf(answer)?.remark;
+  return typeof remark === 'string' && remark.includes('runtime error')
+    ? remark
+    : undefined;
+}
+
+function failureReason({ error, timeoutMs }: Failure): string {
+  if (error instanceof OsmApiError) return `HTTP ${error.status}`;
+  if (isTimeout(error)) {
+    return `no answer within ${Math.round(timeoutMs / 1000)} s`;
+  }
+  if (error instanceof OverpassRuntimeError) return error.message;
+  const code = objectOf((error as Error).cause)?.code;
+  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,39}$/.test(code)
+    ? `unreachable (${code})`
+    : 'unreachable (network error)';
+}
+
+/** Overload, as opposed to an endpoint that refuses or cannot be reached. */
+function looksBusy({ error }: Failure): boolean {
+  if (error instanceof OsmApiError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+  return isTimeout(error) || error instanceof OverpassRuntimeError;
+}
+
+function walkError(failures: Failure[], endpoints: number): Error {
+  const parts = failures.map(
+    (failure, index) =>
+      `#${index + 1} ${endpointOrigin(failure.endpoint)}: ${failureReason(failure)}`
+  );
+  const first = failures.length + 1;
+  if (first <= endpoints) {
+    const range =
+      first === endpoints ? `#${first}` : `#${first} to #${endpoints}`;
+    parts.push(`${range} not tried: time budget used up`);
+  }
+  return new Error(
+    `all Overpass endpoints failed (${parts.join('; ')}). ` +
+      (failures.some(looksBusy)
+        ? 'The public servers may be overloaded — wait ~30 seconds and retry.'
+        : 'No endpoint accepted the request — check OVERPASS_BASE_URL (addresses, keys) and the network.')
+  );
 }

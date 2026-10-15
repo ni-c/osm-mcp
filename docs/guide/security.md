@@ -73,10 +73,12 @@ Upstream error bodies get the same caution: they are truncated, and HTML error
 pages are dropped entirely before anything reaches the model context. The HTTP
 status is decided before a body is read at all, and a non-2xx body is read
 under its own 64 KiB ceiling — so an error page of any size is still the
-status it came with, which is what the Overpass failover and the rate-limit
-hint are keyed on. Text a service writes about a failure (OSRM's `code` and
-`message`) is quoted cut to 200 characters, stripped of control characters and
-labelled as untrusted.
+status it came with, which is what the rate-limit hint is keyed on. Error
+messages name only an endpoint's scheme and host, never its path or query, and
+the configured path segments are scrubbed from error bodies — paid Overpass
+services put their key in the path. Text a service writes about a failure
+(OSRM's `code` and `message`) is quoted cut to 200 characters, stripped of
+control characters and labelled as untrusted.
 
 Everything else a service answers is shaped before it reaches a result: a
 number is taken only when it is finite (JSON `1e999` parses to `Infinity`), a
@@ -91,8 +93,8 @@ without a usable distance is answered with a sentence.
 - The server speaks stdio and **never listens on a port**.
 - **Redirects are never followed** — a redirect would replay request headers
   (including the ORS `Authorization` header) at whatever host it names.
-- Every request **times out** (30 s; 40 s for Overpass, whose queries also
-  carry their own server-side 25 s budget).
+- Every request **times out** (30 s; for Overpass 20–40 s per endpoint and
+  50 s for the whole failover walk, with a server-side 20 s query timeout).
 - Responses are size-capped before they are buffered.
 
 ## Being a good citizen is also a security property

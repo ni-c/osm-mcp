@@ -75,9 +75,10 @@ worth being precise about what is and is not checked.
   an `Authorization` header, and a value the header cannot carry would be
   quoted back by the HTTP layer's own error; the server refuses it first,
   without echoing it.
-- `OVERPASS_BASE_URL` lists at least one and at most eight endpoints. Each
-  entry is a growing back-off plus a 40-second timeout when the mirrors are
-  down, so the list is a per-call budget.
+- `OVERPASS_BASE_URL` lists at least one and at most eight endpoints, walked
+  within one 50-second budget per call. A key in an endpoint's path never
+  reaches the model: error messages name only scheme and host, and path
+  segments of eight characters or more are scrubbed from error bodies.
 - A refused scheme is quoted with at most 40 visible characters: a
   hexadecimal key with a colon after it is a valid URL whose scheme is the key.
 - Loopback addresses are recognised through `mcp-internal-hosts` — the same

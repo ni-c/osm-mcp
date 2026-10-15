@@ -14,7 +14,7 @@ describe('loadConfig', () => {
     expect(config.osrmUrl).toBe('https://routing.openstreetmap.de');
     expect(config.valhallaUrl).toBe('https://valhalla1.openstreetmap.de');
     expect(config.overpassUrls).toEqual([
-      'https://overpass-api.de/api/interpreter',
+      'https://z.overpass-api.de/api/interpreter',
       'https://lz4.overpass-api.de/api/interpreter',
     ]);
     expect(config.orsApiKey).toBeUndefined();

@@ -115,9 +115,12 @@ cache means the geocoding cost is only paid once.
 ## Overpass answers 429 or times out
 
 The public Overpass instance grants ~2 concurrent slots per IP and sheds load
-when busy. The server already retries on the next configured endpoint
-(`lz4.overpass-api.de` by default) when an endpoint answers 429/5xx or does not
-answer within 40 seconds; a persistent failure means all of them are busy. Wait, or configure your own mirror list via
+when busy. The server already moves on to the next configured endpoint
+(`lz4.overpass-api.de` after `z.overpass-api.de` by default) when one fails for
+any reason but a malformed query — an HTTP error, a timeout, a refused
+connection, or a query Overpass aborted — all within 50 seconds per call. The
+error names every endpoint and what it answered; a persistent failure means all
+of them are busy. Wait, or configure your own mirror list via
 `OVERPASS_BASE_URL`.
 
 ## Does it work offline?
