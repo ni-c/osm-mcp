@@ -8,7 +8,7 @@
 # (.github/scripts/check-base-image-pin.sh): `node:lts-alpine` and
 # `node:24-alpine` must resolve to the same digest, and the digest pinned below
 # must be a Node 24 image. The day 24 leaves LTS, that fails.
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS build
+FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
@@ -17,7 +17,7 @@ COPY src ./src
 RUN npm run build && npm prune --omit=dev --ignore-scripts
 
 # Runtime
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f
+FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
 WORKDIR /app
 ENV NODE_ENV=production
 
