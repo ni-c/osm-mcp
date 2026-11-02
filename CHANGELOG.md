@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Require Node.js 24 or newer. CI tests the latest 24 and 26 LTS releases; Node 22 is no longer supported.
+
 [Unreleased]: https://github.com/ni-c/osm-mcp/compare/v0.3.2...HEAD
 
 ## [0.3.2] - 2026-10-15

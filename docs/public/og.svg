@@ -24,8 +24,6 @@
   <text class="pill-label" x="375" y="486" text-anchor="middle">No API key</text>
   <rect class="pill" x="491" y="452" width="91" height="52" rx="26" />
   <text class="pill-label" x="536.5" y="486" text-anchor="middle">MIT</text>
-  <rect class="pill" x="602" y="452" width="163" height="52" rx="26" />
-  <text class="pill-label" x="683.5" y="486" text-anchor="middle">Node ≥22</text>
 
   <text class="site" x="1184" y="486" text-anchor="end">osm-mcp.ni-c.de</text>
 </svg>

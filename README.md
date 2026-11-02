@@ -61,7 +61,7 @@ An OpenRouteService key can be supplied optionally to switch the routing engine.
 
 ## Requirements
 
-- Node.js ≥ 22
+- Node.js ≥ 24
 - Internet access to the public OpenStreetMap services (see table below)
 
 ## Configuration
