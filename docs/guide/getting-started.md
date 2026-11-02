@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **Node.js 22 or newer** (or Docker)
+- **Node.js 24 or newer** (or Docker)
 - Internet access to the public OpenStreetMap services
 
 That is the whole list. There is no account to create, no token to obtain and
